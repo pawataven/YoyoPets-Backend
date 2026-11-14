@@ -1,2 +1,46 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
+
+@theme {
+  --color-primary-dark: #c93a22;
+  --color-primary-soft: #fde8e3;
+  --color-cream: #fff8f5;
+  --color-ink: #2a1d1a;
+  --color-cocoa: #2c1f1d;
+  --color-gold: #ffd43b;
+  --color-line-green: #06c755;
+
+  --font-sans: "Anuphan", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Mitr", "Anuphan", ui-sans-serif, system-ui, sans-serif;
+  /* Fredoka has no Thai glyphs or ฿, so those characters fall back to Anuphan */
+  --font-number: "Fredoka", "Anuphan", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Unlayered so it beats the `@layer theme` defaults Nuxt UI injects at runtime */
+:root {
+  --ui-primary: #ed492e;
+  --ui-success: #2f7a3a;
+  --ui-warning: #8a5a00;
+
+  --ui-text: #2a1d1a;
+  --ui-text-highlighted: #2a1d1a;
+  --ui-text-toned: #6e5a55;
+  --ui-text-muted: #6e5a55;
+
+  --ui-bg-muted: #fff8f5;
+  --ui-bg-inverted: #2c1f1d;
+
+  --ui-border: #efe2de;
+  --ui-border-muted: #efe2de;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading font-medium;
+  }
+}
