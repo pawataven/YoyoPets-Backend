@@ -10,6 +10,23 @@
   --color-gold: #ffd43b;
   --color-line-green: #06c755;
 
+  /* Text on the cocoa sidebar (Figma 20:155): menu items, and secondary lines such as the role */
+  --color-on-cocoa: #e7dad6;
+  --color-on-cocoa-muted: #cdbfbb;
+  /* Text links on cocoa, e.g. "ยกเลิกการเลือก" in the order review bulk bar (Figma 20:1427) */
+  --color-on-cocoa-link: #f2a595;
+
+  /* Dashboard (Figma 20:581): icon tiles, chart series per marketplace, chart lines, leaderboard medals */
+  --color-gold-soft: #fff4d6;
+  --color-neutral-soft: #f3ecea;
+  --color-lazada: #5b5fc7;
+  --color-tiktok: #c98a10;
+  --color-chart-grid: #efe2de;
+  --color-chart-axis: #d9c9c4;
+  --color-medal-gold: #f2b705;
+  --color-medal-silver: #aeb8c2;
+  --color-medal-bronze: #d08a4c;
+
   --font-sans: "Anuphan", ui-sans-serif, system-ui, sans-serif;
   --font-heading: "Mitr", "Anuphan", ui-sans-serif, system-ui, sans-serif;
   /* Fredoka has no Thai glyphs or ฿, so those characters fall back to Anuphan */
@@ -34,6 +51,10 @@
 
   --ui-border: #efe2de;
   --ui-border-muted: #efe2de;
+
+  /* From the admin login design: placeholder text and the slightly darker input outline */
+  --ui-text-dimmed: #a8968f;
+  --ui-border-accented: #e0d2cd;
 }
 
 @layer base {
