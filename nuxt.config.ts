@@ -1,5 +1,24 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  modules: ['@nuxt/ui', '@nuxt/eslint', '@nuxt/image'],
+
+  devtools: { enabled: true },
+
+  app: {
+    head: {
+      htmlAttrs: { lang: 'th' },
+      title: 'YoyoPet Admin'
+    }
+  },
+
+  css: ['~/assets/css/main.css'],
+
   compatibilityDate: '2025-07-15',
-  devtools: { enabled: true }
+
+  typescript: {
+    strict: true
+  },
+
+  icon: {
+    serverBundle: { collections: ['lucide'] }
+  }
 })
