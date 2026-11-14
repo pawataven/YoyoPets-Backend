@@ -1,5 +1,5 @@
 export default defineNuxtConfig({
-  modules: ['@nuxt/ui', '@nuxt/eslint', '@nuxt/image'],
+  modules: ['@nuxt/ui', '@nuxt/eslint', '@nuxt/image', '@nuxtjs/supabase'],
 
   devtools: { enabled: true },
 
@@ -11,6 +11,12 @@ export default defineNuxtConfig({
   },
 
   css: ['~/assets/css/main.css'],
+
+  supabase: {
+    types: '~~/shared/types/database.types.ts',
+    // No login page yet; turn this on together with the admin email + TOTP sign-in
+    redirect: false
+  },
 
   ui: {
     // The brand palette is light-only; without this Nuxt UI follows the OS dark mode

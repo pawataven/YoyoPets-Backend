@@ -21,6 +21,8 @@
   --ui-primary: #ed492e;
   --ui-success: #2f7a3a;
   --ui-warning: #8a5a00;
+  /* The brand palette has no dedicated error red; the member app shows errors in แดงเข้ม too */
+  --ui-error: #c93a22;
 
   --ui-text: #2a1d1a;
   --ui-text-highlighted: #2a1d1a;
