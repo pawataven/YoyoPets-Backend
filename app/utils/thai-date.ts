@@ -45,6 +45,11 @@ export function formatThaiDayMonth(isoDate: string) {
   return new Intl.DateTimeFormat(THAI_GREGORIAN_LOCALE, { day: 'numeric', month: 'short' }).format(new Date(isoDate))
 }
 
+// "9 พ.ย. 2026"
+export function formatThaiShortDate(isoDate: string) {
+  return new Intl.DateTimeFormat(THAI_GREGORIAN_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(isoDate))
+}
+
 // "10 พ.ย. 09:41"
 export function formatThaiDayMonthTime(isoDate: string) {
   const time = new Intl.DateTimeFormat(THAI_GREGORIAN_LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(isoDate))

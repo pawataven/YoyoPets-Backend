@@ -10,6 +10,12 @@ const props = defineProps<{
   // Only pending orders can be approved or rejected in bulk
   isSelectable: boolean
   isLoading: boolean
+  // Order open in the review drawer, highlighted like the hovered row
+  reviewingId: string | null
+}>()
+
+const emit = defineEmits<{
+  review: [orderId: string]
 }>()
 
 const pageOrderIds = computed(() => props.orders?.map(order => order.id) ?? [])
@@ -64,8 +70,7 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
             </th>
             <th
               scope="col"
-              class="w-37.5"
-              :class="isSelectable ? undefined : 'ps-6'"
+              :class="isSelectable ? 'w-37.5' : 'w-43.5 ps-6'"
             >
               ช่องทาง
             </th>
@@ -242,13 +247,15 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
               >–</span>
             </td>
             <td class="pe-10 text-right">
-              <NuxtLink
-                :to="`/orders/${order.id}`"
-                class="inline-flex h-9 w-28 items-center justify-center rounded-lg bg-primary-soft font-heading text-[15px] text-primary-dark transition-colors group-hover:bg-primary group-hover:text-white focus-visible:bg-primary focus-visible:text-white"
+              <button
+                type="button"
+                class="inline-flex h-9 w-28 items-center justify-center rounded-lg font-heading text-[15px] transition-colors group-hover:bg-primary group-hover:text-white focus-visible:bg-primary focus-visible:text-white"
+                :class="order.id === reviewingId ? 'bg-primary text-white' : 'bg-primary-soft text-primary-dark'"
                 :aria-label="`ตรวจสอบคำสั่งซื้อ ${order.orderNo}`"
+                @click="emit('review', order.id)"
               >
                 ตรวจสอบ
-              </NuxtLink>
+              </button>
             </td>
           </tr>
         </tbody>

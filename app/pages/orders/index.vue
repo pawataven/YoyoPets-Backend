@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { OrderReviewFilters } from '~/types/admin'
+import type { OrderApproveOptions, OrderReviewFilters } from '~/types/admin'
 
-// Figma 20:1293
+// List: Figma 20:1293; review drawer: Figma 20:1642
 useSeoMeta({ title: 'ตรวจเลขออเดอร์ · YoyoPet Admin' })
 
 const EXPORT_DEFAULT_DAYS = 30
@@ -9,7 +9,7 @@ const EXPORT_DEFAULT_DAYS = 30
 const route = useRoute()
 const toast = useToast()
 
-// Tab, filters and page live in the URL so they survive reloads and can be shared
+// Tab, filters, page and the order open in the drawer live in the URL so they survive reloads and can be shared
 const filters = computed<OrderReviewFilters>({
   get: () => orderReviewFiltersFromQuery(route.query),
   set: next => navigateTo({ query: orderReviewQuery(next, 1) }, { replace: true })
@@ -18,6 +18,13 @@ const filters = computed<OrderReviewFilters>({
 const page = computed<number>({
   get: () => orderReviewPageFromQuery(route.query),
   set: next => navigateTo({ query: orderReviewQuery(filters.value, next) })
+})
+
+const reviewingId = computed<string | null>({
+  get: () => (typeof route.query.review === 'string' ? route.query.review : null),
+  set: (orderId) => {
+    navigateTo({ query: { ...orderReviewQuery(filters.value, page.value), review: orderId ?? undefined } }, { replace: true })
+  }
 })
 
 const selectedTab = computed({
@@ -30,7 +37,8 @@ const { orderPage, overview, isLoadingOrders, hasOrdersError, approveOrders, rej
 const isSelectable = computed(() => filters.value.tab === 'pending_review')
 const selectedIds = ref<string[]>([])
 
-watch(() => route.fullPath, () => {
+// Opening the drawer also changes the URL, so only a list change clears the selection
+watch(() => JSON.stringify(orderReviewQuery(filters.value, page.value)), () => {
   selectedIds.value = []
 })
 
@@ -39,32 +47,83 @@ const selectedPoints = computed(() => (orderPage.value?.items ?? [])
   .filter(order => selectedIds.value.includes(order.id))
   .reduce((sum, order) => sum + (order.points ?? 0), 0))
 
+const lastPage = computed(() => Math.max(1, Math.ceil((orderPage.value?.totalCount ?? 0) / ORDER_REVIEW_PAGE_SIZE)))
+
 // A filter change can leave the page past the end, e.g. after approving the last orders on page 3
 watch(() => orderPage.value?.totalCount, (totalCount) => {
   if (totalCount === undefined) return
-  const lastPage = Math.max(1, Math.ceil(totalCount / ORDER_REVIEW_PAGE_SIZE))
-  if (page.value > lastPage) navigateTo({ query: orderReviewQuery(filters.value, lastPage) }, { replace: true })
+  if (page.value > lastPage.value) navigateTo({ query: orderReviewQuery(filters.value, lastPage.value) }, { replace: true })
 })
 
+const reviewingIndex = computed(() => orderPage.value?.items.findIndex(order => order.id === reviewingId.value) ?? -1)
+const reviewingPosition = computed(() => (reviewingIndex.value < 0 ? null : (page.value - 1) * ORDER_REVIEW_PAGE_SIZE + reviewingIndex.value + 1))
+const hasPreviousOrder = computed(() => reviewingIndex.value > 0 || (reviewingIndex.value === 0 && page.value > 1))
+const hasNextOrder = computed(() => {
+  const items = orderPage.value?.items ?? []
+  return reviewingIndex.value >= 0 && (reviewingIndex.value < items.length - 1 || page.value < lastPage.value)
+})
+
+// Set when J/K crosses a page boundary: open the first or last order once the new page has loaded
+const openOnPageLoad = ref<'first' | 'last' | null>(null)
+
+watch(() => orderPage.value?.items, (items) => {
+  if (!openOnPageLoad.value || !items?.length) return
+  const target = openOnPageLoad.value === 'first' ? items[0]! : items[items.length - 1]!
+  openOnPageLoad.value = null
+  reviewingId.value = target.id
+})
+
+function goToAdjacentOrder(step: 1 | -1) {
+  const items = orderPage.value?.items ?? []
+  const neighbour = items[reviewingIndex.value + step]
+  if (neighbour) {
+    reviewingId.value = neighbour.id
+    return
+  }
+  openOnPageLoad.value = step === 1 ? 'first' : 'last'
+  navigateTo({ query: orderReviewQuery(filters.value, page.value + step) }, { replace: true })
+}
+
+// After a decision the order usually leaves the list (e.g. the "รอตรวจ" tab), so open whatever took its place
+function openNextAfterDecision(decidedId: string, previousIndex: number) {
+  const items = orderPage.value?.items ?? []
+  if (items.some(order => order.id === decidedId)) {
+    refreshNuxtData(`order-review-detail-${decidedId}`)
+    return
+  }
+  const replacement = items[previousIndex] ?? items[previousIndex - 1]
+  reviewingId.value = replacement?.id ?? null
+}
+
 const isBusy = ref(false)
-const isRejectOpen = ref(false)
+// Bulk bar rejects the selection; the drawer rejects the open order
+const rejectTargetIds = ref<string[]>([])
+const isRejectOpen = computed({
+  get: () => rejectTargetIds.value.length > 0,
+  set: (open) => {
+    if (!open) rejectTargetIds.value = []
+  }
+})
 
 function skippedNote(skippedCount: number, reason: string) {
   return skippedCount ? `ข้าม ${skippedCount.toLocaleString('th-TH')} รายการ (${reason})` : undefined
 }
 
-async function approveSelected() {
-  if (isBusy.value || !selectedIds.value.length) return
+async function approve(orderIds: string[], options: OrderApproveOptions) {
+  if (isBusy.value || !orderIds.length) return
   isBusy.value = true
+  const decidedId = reviewingId.value
+  const previousIndex = reviewingIndex.value
   try {
-    const { updatedCount, skippedCount } = await approveOrders(selectedIds.value)
-    selectedIds.value = []
+    const { updatedCount, skippedCount } = await approveOrders(orderIds, options)
+    selectedIds.value = selectedIds.value.filter(id => !orderIds.includes(id))
     toast.add({
       title: `อนุมัติแล้ว ${updatedCount.toLocaleString('th-TH')} รายการ`,
       description: skippedNote(skippedCount, 'ได้แต้มไม่ได้หรือถูกตรวจไปแล้ว'),
       color: updatedCount ? 'success' : 'warning',
       icon: updatedCount ? 'i-lucide-check' : 'i-lucide-circle-alert'
     })
+    if (decidedId && orderIds.includes(decidedId)) openNextAfterDecision(decidedId, previousIndex)
   } catch {
     toast.add({ title: 'อนุมัติไม่สำเร็จ กรุณาลองใหม่', color: 'error', icon: 'i-lucide-circle-alert' })
   } finally {
@@ -72,19 +131,23 @@ async function approveSelected() {
   }
 }
 
-async function rejectSelected(reason: string) {
-  if (isBusy.value || !selectedIds.value.length) return
+async function reject(reason: string) {
+  const orderIds = rejectTargetIds.value
+  if (isBusy.value || !orderIds.length) return
   isBusy.value = true
+  const decidedId = reviewingId.value
+  const previousIndex = reviewingIndex.value
   try {
-    const { updatedCount, skippedCount } = await rejectOrders(selectedIds.value, reason)
-    selectedIds.value = []
-    isRejectOpen.value = false
+    const { updatedCount, skippedCount } = await rejectOrders(orderIds, reason)
+    selectedIds.value = selectedIds.value.filter(id => !orderIds.includes(id))
+    rejectTargetIds.value = []
     toast.add({
       title: `ไม่อนุมัติ ${updatedCount.toLocaleString('th-TH')} รายการ`,
       description: skippedNote(skippedCount, 'ถูกตรวจไปแล้ว'),
       color: 'success',
       icon: 'i-lucide-check'
     })
+    if (decidedId && orderIds.includes(decidedId)) openNextAfterDecision(decidedId, previousIndex)
   } catch {
     toast.add({ title: 'บันทึกไม่สำเร็จ กรุณาลองใหม่', color: 'error', icon: 'i-lucide-circle-alert' })
   } finally {
@@ -151,15 +214,15 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       :is-busy="isBusy"
       class="mt-4"
       @clear="selectedIds = []"
-      @approve="approveSelected"
-      @reject="isRejectOpen = true"
+      @approve="approve(selectedIds, { creditMode: 'after_return_window' })"
+      @reject="rejectTargetIds = [...selectedIds]"
     />
 
     <OrderRejectDialog
       v-model:open="isRejectOpen"
-      :order-count="selectedIds.length"
+      :order-count="rejectTargetIds.length"
       :is-busy="isBusy"
-      @confirm="rejectSelected"
+      @confirm="reject"
     />
 
     <UAlert
@@ -178,7 +241,22 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       :total-count="orderPage?.totalCount ?? 0"
       :is-selectable="isSelectable"
       :is-loading="isLoadingOrders"
+      :reviewing-id="reviewingId"
       class="mt-4"
+      @review="reviewingId = $event"
+    />
+
+    <OrderReviewDrawer
+      v-model:order-id="reviewingId"
+      :position="reviewingPosition"
+      :total-count="orderPage?.totalCount ?? 0"
+      :has-previous="hasPreviousOrder"
+      :has-next="hasNextOrder"
+      :is-busy="isBusy"
+      @previous="goToAdjacentOrder(-1)"
+      @next="goToAdjacentOrder(1)"
+      @approve="approve(reviewingId ? [reviewingId] : [], $event)"
+      @reject="rejectTargetIds = reviewingId ? [reviewingId] : []"
     />
   </div>
 </template>

@@ -58,15 +58,12 @@ export const PLACEHOLDER_PAGE_TITLES: Record<string, string> = {
   '/account/password': 'เปลี่ยนรหัสผ่าน',
   '/account/security': 'ยืนยันตัวตน 2 ขั้นตอน',
   '/search': 'ผลการค้นหา',
-  '/activity': 'กิจกรรมของทีม',
-  // Planned in docs/tech-stack.md (order file import)
-  '/orders/import': 'นำเข้าไฟล์จาก Seller Center'
+  '/activity': 'กิจกรรมของทีม'
 }
 
 // Detail pages opened from search results, e.g. /orders/<id>
 const PLACEHOLDER_DETAIL_TITLES: Record<string, string> = {
   '/members/': 'ข้อมูลสมาชิก',
-  '/orders/': 'รายละเอียดคำสั่งซื้อ',
   '/redemptions/': 'รายละเอียดการแลกของรางวัล'
 }
 

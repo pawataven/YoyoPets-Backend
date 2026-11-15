@@ -10,6 +10,9 @@ import type {
 
 export const ORDER_REVIEW_PAGE_SIZE = 8
 
+// Display only ("พ้นระยะคืนสินค้า (7 วัน)"); the rule itself is order_return_window() in the database
+export const ORDER_RETURN_WINDOW_DAYS = 7
+
 // Tab order and wording from Figma 20:1293; "ทั้งหมด" has no count in the design
 export const ORDER_REVIEW_TABS: { value: OrderReviewTab, label: string }[] = [
   { value: 'pending_review', label: 'รอตรวจ' },

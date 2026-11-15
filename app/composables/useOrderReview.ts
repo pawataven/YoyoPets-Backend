@@ -1,5 +1,5 @@
 import { useRepositories } from '~/repositories'
-import type { OrderReviewFilters } from '~/types/admin'
+import type { OrderApproveOptions, OrderReviewFilters } from '~/types/admin'
 
 export function useOrderReview(filters: Ref<OrderReviewFilters>, page: Ref<number>) {
   const { order } = useRepositories()
@@ -23,8 +23,8 @@ export function useOrderReview(filters: Ref<OrderReviewFilters>, page: Ref<numbe
     await Promise.all([refreshOrderPage(), refreshOverview(), refreshNuxtData('work-queue-counts')])
   }
 
-  async function approveOrders(orderIds: string[]) {
-    const result = await order.approveOrders(orderIds)
+  async function approveOrders(orderIds: string[], options: OrderApproveOptions) {
+    const result = await order.approveOrders(orderIds, options)
     await refreshAfterChange()
     return result
   }

@@ -101,6 +101,45 @@ export interface OrderReviewItem {
   status: OrderReviewStatus
 }
 
+export type PlatformOrderStatus = 'pending' | 'completed' | 'cancelled' | 'returned'
+
+// The order as it appears in the latest Seller Center file
+export interface PlatformOrderRecord {
+  status: PlatformOrderStatus
+  amountBaht: number | null
+  deliveredAt: string | null
+  returnWindowEndsAt: string | null
+  importedAt: string
+}
+
+export interface PlatformOrderItem {
+  id: string
+  productName: string
+  quantity: number
+  totalBaht: number
+}
+
+export interface OrderReviewDetail extends OrderReviewItem {
+  memberPhone: string | null
+  pointsMultiplier: number
+  claimedAmountBaht: number | null
+  fileRecord: PlatformOrderRecord | null
+  items: PlatformOrderItem[]
+  // Short-lived signed URL; null when the member attached no picture
+  proofImageUrl: string | null
+  rejectionReason: string | null
+  pointsAvailableAt: string | null
+}
+
+// "แต้มเข้าเมื่อพ้นระยะคืนสินค้า" (recommended) or "ให้แต้มใช้ได้ทันที" in the review drawer
+export type OrderCreditMode = 'after_return_window' | 'immediately'
+
+export interface OrderApproveOptions {
+  creditMode: OrderCreditMode
+  // The drawer's "ยอดซื้อที่ใช้คำนวณ"; only allowed when approving a single order
+  amountOverrideBaht?: number
+}
+
 export type OrderReviewTab = OrderReviewStatus | 'all'
 export type OrderSubmittedWithin = 'today' | '7d' | '30d' | 'all'
 
