@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { OrderApproveOptions, OrderReviewFilters } from '~/types/admin'
+import type { OrderApproveOptions, OrderDecisionLine, OrderReviewFilters, OrderReviewOutcome, OrderReviewStatus } from '~/types/admin'
 
 // List: Figma 20:1293; review drawer: Figma 20:1642
 useSeoMeta({ title: 'ตรวจเลขออเดอร์ · YoyoPet Admin' })
@@ -84,24 +84,32 @@ function goToAdjacentOrder(step: 1 | -1) {
   navigateTo({ query: orderReviewQuery(filters.value, page.value + step) }, { replace: true })
 }
 
-// After a decision the order usually leaves the list (e.g. the "รอตรวจ" tab), so open whatever took its place
-function openNextAfterDecision(decidedId: string, previousIndex: number) {
-  const items = orderPage.value?.items ?? []
-  if (items.some(order => order.id === decidedId)) {
-    refreshNuxtData(`order-review-detail-${decidedId}`)
-    return
-  }
-  const replacement = items[previousIndex] ?? items[previousIndex - 1]
-  reviewingId.value = replacement?.id ?? null
+// The admin asked for one decision per opening: auto-advancing made it too easy to approve the next order by mistake
+function closeDrawerAfterDecision(orderIds: string[]) {
+  if (reviewingId.value && orderIds.includes(reviewingId.value)) reviewingId.value = null
 }
 
 const isBusy = ref(false)
-// Bulk bar rejects the selection; the drawer rejects the open order
-const rejectTargetIds = ref<string[]>([])
-const isRejectOpen = computed({
-  get: () => rejectTargetIds.value.length > 0,
+
+// Every decision goes through a confirmation that recaps the orders (user request 2026-11-17).
+// The bulk bar decides the selection; the drawer decides the open order with the amount and points shown there.
+const selectedLines = computed(() => (orderPage.value?.items ?? [])
+  .filter(order => selectedIds.value.includes(order.id))
+  .map(toOrderDecisionLine))
+
+const pendingApproval = ref<{ lines: OrderDecisionLine[], options: OrderApproveOptions } | null>(null)
+const isApproveConfirmOpen = computed({
+  get: () => pendingApproval.value !== null,
   set: (open) => {
-    if (!open) rejectTargetIds.value = []
+    if (!open) pendingApproval.value = null
+  }
+})
+
+const rejectLines = ref<OrderDecisionLine[]>([])
+const isRejectOpen = computed({
+  get: () => rejectLines.value.length > 0,
+  set: (open) => {
+    if (!open) rejectLines.value = []
   }
 })
 
@@ -109,21 +117,59 @@ function skippedNote(skippedCount: number, reason: string) {
   return skippedCount ? `ข้าม ${skippedCount.toLocaleString('th-TH')} รายการ (${reason})` : undefined
 }
 
-async function approve(orderIds: string[], options: OrderApproveOptions) {
-  if (isBusy.value || !orderIds.length) return
+// Searching by the order number puts it on page 1 of its new tab whatever the other filters were
+function openOrderInItsTab(outcome: OrderReviewOutcome) {
+  const query = orderReviewQuery(
+    { tab: outcome.status, searchTerm: outcome.orderNo, platform: 'all', matchResult: 'all', submittedWithin: 'all' },
+    1
+  )
+  navigateTo({ query: { ...query, review: outcome.id } })
+}
+
+// Decided orders leave the current tab, so the toast says where they went and links there
+function decisionToast(title: string, outcomes: OrderReviewOutcome[], note: string | undefined) {
+  const countByStatus = new Map<OrderReviewStatus, number>()
+  for (const outcome of outcomes) countByStatus.set(outcome.status, (countByStatus.get(outcome.status) ?? 0) + 1)
+  const destinations = [...countByStatus]
+
+  const destinationText = outcomes.length === 1
+    ? `ย้ายไปแท็บ "${ORDER_STATUS_BADGES[outcomes[0]!.status].label}"`
+    : destinations.length
+      ? `ย้ายไป ${destinations.map(([status, count]) => `${ORDER_STATUS_BADGES[status].label} ${count.toLocaleString('th-TH')}`).join(' · ')}`
+      : undefined
+
+  const actions = outcomes.length === 1
+    ? [{ label: 'ไปดูรายการนี้', onClick: () => openOrderInItsTab(outcomes[0]!) }]
+    : destinations.map(([status]) => ({
+        label: `ไปแท็บ ${ORDER_STATUS_BADGES[status].label}`,
+        onClick: () => { selectedTab.value = status }
+      }))
+
+  toast.add({
+    title,
+    description: [destinationText, note].filter(Boolean).join(' · ') || undefined,
+    color: outcomes.length ? 'success' : 'warning',
+    icon: outcomes.length ? 'i-lucide-check' : 'i-lucide-circle-alert',
+    duration: actions.length ? 8000 : undefined,
+    actions: actions.map(action => ({ ...action, color: 'neutral' as const, variant: 'outline' as const, size: 'sm' as const }))
+  })
+}
+
+async function confirmApproval() {
+  const approval = pendingApproval.value
+  if (isBusy.value || !approval) return
+  const orderIds = approval.lines.map(line => line.id)
   isBusy.value = true
-  const decidedId = reviewingId.value
-  const previousIndex = reviewingIndex.value
   try {
-    const { updatedCount, skippedCount } = await approveOrders(orderIds, options)
+    const { updatedCount, skippedCount, outcomes } = await approveOrders(orderIds, approval.options)
     selectedIds.value = selectedIds.value.filter(id => !orderIds.includes(id))
-    toast.add({
-      title: `อนุมัติแล้ว ${updatedCount.toLocaleString('th-TH')} รายการ`,
-      description: skippedNote(skippedCount, 'ได้แต้มไม่ได้หรือถูกตรวจไปแล้ว'),
-      color: updatedCount ? 'success' : 'warning',
-      icon: updatedCount ? 'i-lucide-check' : 'i-lucide-circle-alert'
-    })
-    if (decidedId && orderIds.includes(decidedId)) openNextAfterDecision(decidedId, previousIndex)
+    pendingApproval.value = null
+    decisionToast(
+      `อนุมัติแล้ว ${updatedCount.toLocaleString('th-TH')} รายการ`,
+      outcomes,
+      skippedNote(skippedCount, 'ได้แต้มไม่ได้หรือถูกตรวจไปแล้ว')
+    )
+    closeDrawerAfterDecision(orderIds)
   } catch {
     toast.add({ title: 'อนุมัติไม่สำเร็จ กรุณาลองใหม่', color: 'error', icon: 'i-lucide-circle-alert' })
   } finally {
@@ -132,22 +178,19 @@ async function approve(orderIds: string[], options: OrderApproveOptions) {
 }
 
 async function reject(reason: string) {
-  const orderIds = rejectTargetIds.value
+  const orderIds = rejectLines.value.map(line => line.id)
   if (isBusy.value || !orderIds.length) return
   isBusy.value = true
-  const decidedId = reviewingId.value
-  const previousIndex = reviewingIndex.value
   try {
-    const { updatedCount, skippedCount } = await rejectOrders(orderIds, reason)
+    const { updatedCount, skippedCount, outcomes } = await rejectOrders(orderIds, reason)
     selectedIds.value = selectedIds.value.filter(id => !orderIds.includes(id))
-    rejectTargetIds.value = []
-    toast.add({
-      title: `ไม่อนุมัติ ${updatedCount.toLocaleString('th-TH')} รายการ`,
-      description: skippedNote(skippedCount, 'ถูกตรวจไปแล้ว'),
-      color: 'success',
-      icon: 'i-lucide-check'
-    })
-    if (decidedId && orderIds.includes(decidedId)) openNextAfterDecision(decidedId, previousIndex)
+    rejectLines.value = []
+    decisionToast(
+      `ไม่อนุมัติ ${updatedCount.toLocaleString('th-TH')} รายการ`,
+      outcomes,
+      skippedNote(skippedCount, 'ถูกตรวจไปแล้ว')
+    )
+    closeDrawerAfterDecision(orderIds)
   } catch {
     toast.add({ title: 'บันทึกไม่สำเร็จ กรุณาลองใหม่', color: 'error', icon: 'i-lucide-circle-alert' })
   } finally {
@@ -214,15 +257,8 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       :is-busy="isBusy"
       class="mt-4"
       @clear="selectedIds = []"
-      @approve="approve(selectedIds, { creditMode: 'after_return_window' })"
-      @reject="rejectTargetIds = [...selectedIds]"
-    />
-
-    <OrderRejectDialog
-      v-model:open="isRejectOpen"
-      :order-count="rejectTargetIds.length"
-      :is-busy="isBusy"
-      @confirm="reject"
+      @approve="pendingApproval = { lines: selectedLines, options: { creditMode: 'after_return_window' } }"
+      @reject="rejectLines = selectedLines"
     />
 
     <UAlert
@@ -240,6 +276,7 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       :orders="orderPage?.items ?? null"
       :total-count="orderPage?.totalCount ?? 0"
       :is-selectable="isSelectable"
+      :shows-status="filters.tab === 'all'"
       :is-loading="isLoadingOrders"
       :reviewing-id="reviewingId"
       class="mt-4"
@@ -255,8 +292,24 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       :is-busy="isBusy"
       @previous="goToAdjacentOrder(-1)"
       @next="goToAdjacentOrder(1)"
-      @approve="approve(reviewingId ? [reviewingId] : [], $event)"
-      @reject="rejectTargetIds = reviewingId ? [reviewingId] : []"
+      @approve="(options, recap) => (pendingApproval = { lines: [recap], options })"
+      @reject="recap => (rejectLines = [recap])"
+    />
+
+    <!-- Must come after the drawer: overlays have no z-index and stack in teleport order, so dialogs opened from the drawer would sit behind it -->
+    <OrderApproveConfirmDialog
+      v-model:open="isApproveConfirmOpen"
+      :lines="pendingApproval?.lines ?? []"
+      :credit-mode="pendingApproval?.options.creditMode ?? 'after_return_window'"
+      :is-busy="isBusy"
+      @confirm="confirmApproval"
+    />
+
+    <OrderRejectDialog
+      v-model:open="isRejectOpen"
+      :lines="rejectLines"
+      :is-busy="isBusy"
+      @confirm="reject"
     />
   </div>
 </template>

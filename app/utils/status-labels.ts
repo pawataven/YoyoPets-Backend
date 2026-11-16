@@ -36,6 +36,24 @@ export function orderMatchLabel(order: Pick<OrderReviewItem, 'matchResult' | 'du
     : label
 }
 
+const REVIEW_DECISION_VERBS: Record<OrderReviewStatus, string | null> = {
+  pending_review: null,
+  waiting_return_period: 'อนุมัติโดย',
+  approved: 'อนุมัติโดย',
+  rejected: 'ไม่อนุมัติโดย',
+  cancelled: 'ยกเลิกโดย'
+}
+
+// The name is gone when the reviewing admin account was deleted; the decision itself still stands
+export const REMOVED_ADMIN_NAME = 'แอดมินที่ถูกลบ'
+
+// "อนุมัติโดย ทีมพัฒนา"; null while the order is still waiting for review
+export function orderReviewerLabel(order: Pick<OrderReviewItem, 'status' | 'reviewedAt' | 'reviewerName'>) {
+  const verb = REVIEW_DECISION_VERBS[order.status]
+  if (!verb || !order.reviewedAt) return null
+  return `${verb} ${order.reviewerName ?? REMOVED_ADMIN_NAME}`
+}
+
 export const REDEMPTION_STATUS_BADGES: Record<RedemptionStatus, StatusBadge> = {
   requested: { label: 'รอดำเนินการ', class: TONE_WAITING },
   preparing: { label: 'กำลังเตรียมของ', class: TONE_WAITING },

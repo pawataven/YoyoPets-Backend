@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { DialogDescription, DialogTitle } from 'reka-ui'
+import type { OrderDecisionLine } from '~/types/admin'
 
 // No design yet: styled after the export dialog. The reason is stored with the order so the member can see why.
+// The list recaps exactly which orders are being rejected (user request 2026-11-17: confirm before every decision).
 const isOpen = defineModel<boolean>('open', { required: true })
 
-defineProps<{
-  orderCount: number
+const props = defineProps<{
+  lines: OrderDecisionLine[]
   isBusy: boolean
 }>()
+
+// The page clears the lines as it closes the dialog; keep the last ones so the fade-out does not flash "0 รายการ"
+const shownLines = ref<OrderDecisionLine[]>([])
+watch(() => props.lines, (lines) => {
+  if (lines.length) shownLines.value = lines
+}, { immediate: true })
 
 const emit = defineEmits<{
   confirm: [reason: string]
@@ -45,13 +53,22 @@ function confirmReject() {
       <form @submit.prevent="confirmReject">
         <div class="px-5 pt-6 pb-5 sm:px-8 sm:pt-8">
           <DialogTitle class="font-sans text-2xl font-bold text-ink">
-            ไม่อนุมัติ {{ orderCount.toLocaleString('th-TH') }} รายการ
+            ยืนยันไม่อนุมัติ {{ shownLines.length.toLocaleString('th-TH') }} รายการ
           </DialogTitle>
           <DialogDescription class="mt-1 text-[15px] text-muted">
-            สมาชิกจะเห็นเหตุผลนี้ในประวัติคำสั่งซื้อ
+            ตรวจสอบรายการอีกครั้ง รายการนี้จะไม่ได้แต้มและย้ายไปแท็บ "ไม่ผ่าน" สมาชิกจะเห็นเหตุผลในประวัติคำสั่งซื้อ
           </DialogDescription>
 
-          <div class="mt-6 flex flex-wrap gap-2">
+          <OrderDecisionList
+            :lines="shownLines"
+            :shows-points="false"
+            class="mt-5"
+          />
+
+          <p class="mt-5 text-[15px] font-bold text-ink">
+            เหตุผล
+          </p>
+          <div class="mt-2 flex flex-wrap gap-2">
             <button
               v-for="commonReason in COMMON_REASONS"
               :key="commonReason"
@@ -83,7 +100,7 @@ function confirmReject() {
             class="h-12 flex-1 justify-center rounded-xl px-7 text-[17px] font-bold text-ink ring-[1.5px] sm:flex-none"
             @click="isOpen = false"
           >
-            ยกเลิก
+            กลับไปแก้
           </UButton>
           <UButton
             type="submit"
@@ -92,7 +109,7 @@ function confirmReject() {
             :disabled="!reason.trim()"
             class="h-12 flex-1 justify-center rounded-xl px-7 text-[17px] font-bold sm:flex-none"
           >
-            ไม่อนุมัติ
+            ยืนยันไม่อนุมัติ
           </UButton>
         </div>
       </form>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { DialogDescription, DialogTitle } from 'reka-ui'
-import type { OrderApproveOptions, OrderCreditMode } from '~/types/admin'
+import type { OrderApproveOptions, OrderCreditMode, OrderDecisionLine } from '~/types/admin'
 
 // Figma 20:1642, opened over the order list
 const orderId = defineModel<string | null>('orderId', { required: true })
@@ -17,8 +17,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   previous: []
   next: []
-  approve: [options: OrderApproveOptions]
-  reject: []
+  approve: [options: OrderApproveOptions, recap: OrderDecisionLine]
+  reject: [recap: OrderDecisionLine]
 }>()
 
 const POINTS_PREVIEW_DEBOUNCE_MS = 250
@@ -101,20 +101,30 @@ function approve() {
   const order = detail.value
   if (!order || approveBlockedReason.value || props.isBusy) return
   const startingAmount = order.fileRecord?.amountBaht ?? order.claimedAmountBaht
-  emit('approve', {
-    creditMode: creditMode.value,
-    amountOverrideBaht: amountBaht.value !== startingAmount ? amountBaht.value! : undefined
-  })
+  emit(
+    'approve',
+    {
+      creditMode: creditMode.value,
+      amountOverrideBaht: amountBaht.value !== startingAmount ? amountBaht.value! : undefined
+    },
+    { ...toOrderDecisionLine(order), amountBaht: amountBaht.value, points: previewPoints.value }
+  )
+}
+
+function reject() {
+  if (detail.value) emit('reject', { ...toOrderDecisionLine(detail.value), points: null })
 }
 
 const reviewedSummary = computed(() => {
   const order = detail.value
   if (!order || isPending.value) return null
-  if (order.status === 'rejected') return { tone: 'bg-primary-soft/70 text-primary-dark', text: `ไม่อนุมัติ · ${order.rejectionReason ?? ''}` }
-  if (order.status === 'cancelled') return { tone: 'bg-neutral-soft text-muted', text: 'ยกเลิกแล้ว' }
+  const reviewer = orderReviewerLabel(order)
+  const byline = reviewer && order.reviewedAt ? `${reviewer} · ${formatThaiDateTime(new Date(order.reviewedAt))}` : null
+  if (order.status === 'rejected') return { tone: 'bg-primary-soft/70 text-primary-dark', text: `ไม่อนุมัติ · ${order.rejectionReason ?? ''}`, byline }
+  if (order.status === 'cancelled') return { tone: 'bg-neutral-soft text-muted', text: 'ยกเลิกแล้ว', byline }
   const points = order.points === null ? '' : ` · +${order.points.toLocaleString('th-TH')} แต้ม`
   const availability = order.pointsAvailableAt ? ` · แต้มใช้ได้ตั้งแต่ ${formatThaiShortDate(order.pointsAvailableAt)}` : ''
-  return { tone: 'bg-success/10 text-success', text: `อนุมัติแล้ว${points}${availability}` }
+  return { tone: 'bg-success/10 text-success', text: `อนุมัติแล้ว${points}${availability}`, byline }
 })
 
 // Gmail-style J (next) / K (previous); ignored while typing in a field
@@ -348,6 +358,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
               :class="reviewedSummary.tone"
             >
               {{ reviewedSummary.text }}
+              <span
+                v-if="reviewedSummary.byline"
+                class="mt-1 block text-sm font-normal"
+              >
+                {{ reviewedSummary.byline }}
+              </span>
             </p>
           </div>
         </div>
@@ -369,7 +385,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
               icon="i-lucide-x"
               :disabled="isBusy"
               class="h-12 flex-1 justify-center rounded-xl px-5 font-heading text-base font-normal text-primary-dark ring-[1.5px] ring-primary/60 hover:bg-primary-soft sm:flex-none"
-              @click="emit('reject')"
+              @click="reject"
             >
               ไม่อนุมัติ
             </UButton>

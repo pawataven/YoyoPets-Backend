@@ -9,6 +9,8 @@ const props = defineProps<{
   totalCount: number
   // Only pending orders can be approved or rejected in bulk
   isSelectable: boolean
+  // The "ทั้งหมด" tab mixes every status, so each row says which tab it belongs to
+  showsStatus: boolean
   isLoading: boolean
   // Order open in the review drawer, highlighted like the hovered row
   reviewingId: string | null
@@ -114,6 +116,13 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
               แต้ม
             </th>
             <th
+              v-if="!isSelectable"
+              scope="col"
+              class="w-44 ps-8"
+            >
+              ตรวจโดย
+            </th>
+            <th
               scope="col"
               class="w-54.5 pe-10"
             >
@@ -132,7 +141,7 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
             class="h-18 border-t border-default"
           >
             <td
-              :colspan="isSelectable ? 10 : 9"
+              :colspan="10"
               class="px-6"
             >
               <USkeleton class="h-8 w-full" />
@@ -143,7 +152,7 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
         <tbody v-else-if="!orders.length">
           <tr class="border-t border-default">
             <td
-              :colspan="isSelectable ? 10 : 9"
+              :colspan="10"
               class="px-6 py-16 text-center text-muted"
             >
               ไม่พบคำสั่งซื้อตามเงื่อนไขที่เลือก
@@ -187,6 +196,13 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
             </td>
             <td class="font-number text-base text-ink">
               {{ order.orderNo }}
+              <span
+                v-if="showsStatus"
+                class="mt-1 flex w-fit items-center rounded-full px-2.5 py-0.5 font-sans text-xs font-bold whitespace-nowrap"
+                :class="ORDER_STATUS_BADGES[order.status].class"
+              >
+                {{ ORDER_STATUS_BADGES[order.status].label }}
+              </span>
             </td>
             <td>
               <span class="flex items-center gap-3">
@@ -244,6 +260,20 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
                 v-else
                 class="font-number text-[17px] font-bold text-dimmed"
                 aria-label="ไม่ได้แต้ม"
+              >–</span>
+            </td>
+            <td
+              v-if="!isSelectable"
+              class="ps-8"
+            >
+              <template v-if="order.reviewedAt">
+                <span class="block max-w-40 truncate text-sm font-bold text-ink">{{ order.reviewerName ?? REMOVED_ADMIN_NAME }}</span>
+                <span class="block text-[13px] text-muted">{{ formatThaiDayMonthTime(order.reviewedAt) }}</span>
+              </template>
+              <span
+                v-else
+                class="text-dimmed"
+                aria-label="ยังไม่ได้ตรวจ"
               >–</span>
             </td>
             <td class="pe-10 text-right">

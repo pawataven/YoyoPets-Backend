@@ -9,6 +9,7 @@ import type {
   OrderReviewDetail,
   OrderReviewFilters,
   OrderReviewItem,
+  OrderReviewOutcome,
   OrderReviewStatus,
   OrderSearchResult,
   OrderStatusCounts,
@@ -20,6 +21,7 @@ export interface OrderRepository {
   searchOrders(searchTerm: string, limit: number): Promise<SearchResultPage<OrderSearchResult>>
   listReviewOrders(filters: OrderReviewFilters, page: number, pageSize: number): Promise<SearchResultPage<OrderReviewItem>>
   getReviewOrder(orderId: string): Promise<OrderReviewDetail | null>
+  getReviewStatuses(orderIds: string[]): Promise<OrderReviewOutcome[]>
   countByStatus(): Promise<OrderStatusCounts>
   getLatestFileImports(): Promise<OrderFileImport[]>
   // Points come from the database (calculate_order_points) so the preview can never disagree with what approval grants
@@ -30,10 +32,10 @@ export interface OrderRepository {
 
 type ReviewRow = Omit<
   Database['public']['Views']['member_order_reviews']['Row'],
-  'approved_amount_baht' | 'points_awarded' | 'reviewed_at' | 'stored_status'
+  'approved_amount_baht' | 'points_awarded' | 'reviewed_by' | 'stored_status'
 >
 
-const REVIEW_COLUMNS = 'id, member_id, member_code, member_name, member_phone, tier_name, tier_points_multiplier, platform, order_no, submitted_at, claimed_amount_baht, proof_image_path, review_status, rejection_reason, points_available_at, amount_baht, platform_order_id, file_status, file_amount_baht, file_delivered_at, return_window_ends_at, file_imported_at, duplicate_of_member_code, match_result, points'
+const REVIEW_COLUMNS = 'id, member_id, member_code, member_name, member_phone, tier_name, tier_points_multiplier, platform, order_no, submitted_at, claimed_amount_baht, proof_image_path, review_status, rejection_reason, points_available_at, amount_baht, platform_order_id, file_status, file_amount_baht, file_delivered_at, return_window_ends_at, file_imported_at, duplicate_of_member_code, match_result, points, reviewed_at, reviewer_name'
 
 const REVIEW_STATUSES: OrderReviewStatus[] = ['pending_review', 'waiting_return_period', 'approved', 'rejected', 'cancelled']
 const PROOF_BUCKET = 'order-proofs'
@@ -80,7 +82,9 @@ function toReviewItem(row: ReviewRow): OrderReviewItem {
     duplicateOfMemberCode: row.duplicate_of_member_code,
     amountBaht: toNumberOrNull(row.amount_baht),
     points: row.points,
-    status: row.review_status as OrderReviewStatus
+    status: row.review_status as OrderReviewStatus,
+    reviewedAt: row.reviewed_at,
+    reviewerName: row.reviewer_name
   }
 }
 
@@ -177,6 +181,16 @@ export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>
         rejectionReason: row.rejection_reason,
         pointsAvailableAt: row.points_available_at
       }
+    },
+
+    async getReviewStatuses(orderIds) {
+      if (!orderIds.length) return []
+      const { data, error } = await supabase
+        .from('member_order_reviews')
+        .select('id, order_no, review_status')
+        .in('id', orderIds)
+      if (error) throw error
+      return data.map(row => ({ id: row.id!, orderNo: row.order_no!, status: row.review_status as OrderReviewStatus }))
     },
 
     async countByStatus() {

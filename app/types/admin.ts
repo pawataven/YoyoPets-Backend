@@ -99,6 +99,9 @@ export interface OrderReviewItem {
   // null when the order cannot earn points (duplicate, cancelled, returned)
   points: number | null
   status: OrderReviewStatus
+  // Set once an admin approves, rejects or cancels; the name is null if that admin account was removed
+  reviewedAt: string | null
+  reviewerName: string | null
 }
 
 export type PlatformOrderStatus = 'pending' | 'completed' | 'cancelled' | 'returned'
@@ -138,6 +141,24 @@ export interface OrderApproveOptions {
   creditMode: OrderCreditMode
   // The drawer's "ยอดซื้อที่ใช้คำนวณ"; only allowed when approving a single order
   amountOverrideBaht?: number
+}
+
+// One order as recapped in the approve / reject confirmation, with the amount and points that will actually be used
+export interface OrderDecisionLine {
+  id: string
+  platform: MarketplacePlatform
+  orderNo: string
+  memberName: string
+  memberCode: string
+  amountBaht: number | null
+  points: number | null
+}
+
+// Where an order landed after a decision, so the admin can follow it to its new tab
+export interface OrderReviewOutcome {
+  id: string
+  orderNo: string
+  status: OrderReviewStatus
 }
 
 export type OrderReviewTab = OrderReviewStatus | 'all'

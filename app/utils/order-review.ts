@@ -1,7 +1,9 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 import type {
   MarketplacePlatform,
+  OrderDecisionLine,
   OrderMatchResult,
+  OrderReviewItem,
   OrderReviewFilters,
   OrderReviewStatus,
   OrderReviewTab,
@@ -80,6 +82,18 @@ export function orderReviewQuery(filters: OrderReviewFilters, page: number): Loc
     match: filters.matchResult === defaults.matchResult ? undefined : filters.matchResult,
     within: filters.submittedWithin === defaults.submittedWithin ? undefined : filters.submittedWithin,
     page: page > 1 ? String(page) : undefined
+  }
+}
+
+export function toOrderDecisionLine(order: OrderReviewItem): OrderDecisionLine {
+  return {
+    id: order.id,
+    platform: order.platform,
+    orderNo: order.orderNo,
+    memberName: order.member.fullName,
+    memberCode: order.member.memberCode,
+    amountBaht: order.amountBaht,
+    points: order.points
   }
 }
 

@@ -23,16 +23,22 @@ export function useOrderReview(filters: Ref<OrderReviewFilters>, page: Ref<numbe
     await Promise.all([refreshOrderPage(), refreshOverview(), refreshNuxtData('work-queue-counts')])
   }
 
+  // Skipped orders stay pending, so only the ones that actually moved are reported
+  async function decidedOutcomes(orderIds: string[]) {
+    const outcomes = await order.getReviewStatuses(orderIds).catch(() => [])
+    return outcomes.filter(outcome => outcome.status !== 'pending_review')
+  }
+
   async function approveOrders(orderIds: string[], options: OrderApproveOptions) {
     const result = await order.approveOrders(orderIds, options)
-    await refreshAfterChange()
-    return result
+    const [outcomes] = await Promise.all([decidedOutcomes(orderIds), refreshAfterChange()])
+    return { ...result, outcomes }
   }
 
   async function rejectOrders(orderIds: string[], reason: string) {
     const result = await order.rejectOrders(orderIds, reason)
-    await refreshAfterChange()
-    return result
+    const [outcomes] = await Promise.all([decidedOutcomes(orderIds), refreshAfterChange()])
+    return { ...result, outcomes }
   }
 
   return {
