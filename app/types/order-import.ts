@@ -65,6 +65,26 @@ export interface GroupedOrders {
   unknownStatuses: UnknownStatus[]
 }
 
+export interface ImportHistoryEntry {
+  id: string
+  platform: 'shopee' | 'lazada' | 'tiktok'
+  fileName: string
+  // null when the importing admin's account was removed
+  importerName: string | null
+  importedAt: string
+  // In progress = the browser stopped before finishing; re-selecting the same file resumes it
+  isInProgress: boolean
+  // null while in progress, and for imports made before summaries existed
+  ordersTotal: number | null
+  orderedFrom: string | null
+  orderedTo: string | null
+  pointsScheduled: number
+  pointsReleased: number
+  pointsReduced: number
+  pointsCancelled: number
+  warningCount: number
+}
+
 export interface ImportSummary {
   importId: string
   ordersTotal: number

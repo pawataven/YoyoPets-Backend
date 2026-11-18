@@ -6,6 +6,7 @@ import type {
   GroupedOrders,
   HeaderDetection,
   ImportField,
+  ImportHistoryEntry,
   ImportSummary
 } from '~/types/order-import'
 import { detectHeader } from '~/utils/order-import/detect-header'
@@ -18,6 +19,7 @@ export type OrderImportStep = 'choose' | 'reading' | 'map_columns' | 'map_status
 // import_order_chunk accepts up to 2,000; 1,000 keeps each request well under Supabase's statement timeout
 const IMPORT_CHUNK_SIZE = 1000
 const LONG_WAIT_DAYS = 14
+const IMPORT_HISTORY_LIMIT = 20
 
 const IMPORT_ERROR_MESSAGES: Record<string, string> = {
   duplicate_file: 'ไฟล์นี้เคยนำเข้าเสร็จแล้ว ถ้าต้องการอัปเดตสถานะ ให้ export ไฟล์ใหม่จาก Seller Center',
@@ -66,7 +68,24 @@ export function useOrderImport() {
   const progress = ref({ sent: 0, total: 0 })
   const summary = ref<ImportSummary | null>(null)
   const longWaitingCount = ref<number | null>(null)
+  const historyPlatform = ref<MarketplacePlatform | 'all'>('all')
+  const history = ref<ImportHistoryEntry[] | null>(null)
+  const hasHistoryError = ref(false)
   let fileHash = ''
+
+  async function refreshHistory() {
+    try {
+      history.value = await orderImport.listImportHistory(
+        IMPORT_HISTORY_LIMIT,
+        historyPlatform.value === 'all' ? null : historyPlatform.value
+      )
+      hasHistoryError.value = false
+    } catch {
+      hasHistoryError.value = true
+    }
+  }
+
+  watch(historyPlatform, refreshHistory)
 
   const headerRow = computed(() => (detection.value ? rows.value[detection.value.headerRowIndex] ?? [] : []))
   const dataRows = computed(() => (detection.value ? rows.value.slice(detection.value.headerRowIndex + 1) : []))
@@ -179,10 +198,15 @@ export function useOrderImport() {
       }
       summary.value = await orderImport.finishImport(importId)
       step.value = 'done'
-      await Promise.all([refreshLongWaitingCount(), refreshNuxtData(['order-review-overview', 'work-queue-counts'])])
+      await Promise.all([
+        refreshLongWaitingCount(),
+        refreshHistory(),
+        refreshNuxtData(['order-review-overview', 'work-queue-counts'])
+      ])
     } catch (error) {
       errorMessage.value = importErrorMessage(error)
       step.value = 'review'
+      await refreshHistory()
     }
   }
 
@@ -201,6 +225,10 @@ export function useOrderImport() {
     summary,
     longWaitingCount,
     longWaitDays: LONG_WAIT_DAYS,
+    historyPlatform,
+    history,
+    hasHistoryError,
+    refreshHistory,
     selectFile,
     confirmColumns,
     confirmStatuses,

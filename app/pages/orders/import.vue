@@ -21,10 +21,24 @@ const {
   confirmStatuses,
   runImport,
   reset,
-  refreshLongWaitingCount
+  refreshLongWaitingCount,
+  historyPlatform,
+  history,
+  hasHistoryError,
+  refreshHistory
 } = useOrderImport()
 
-onMounted(refreshLongWaitingCount)
+onMounted(() => Promise.all([refreshLongWaitingCount(), refreshHistory()]))
+
+// A wrong meaning releases or cancels points, so only super admins may define one (RLS enforces it too)
+const { account } = useAdminAuth()
+const canDefineMeanings = computed(() => account.value?.role === 'super_admin')
+const needsMeanings = computed(() => step.value === 'map_columns' || step.value === 'map_statuses')
+
+const undefinedItemsText = computed(() => {
+  if (step.value === 'map_statuses') return (grouped.value?.unknownStatuses ?? []).map(unknown => `"${unknown.rawStatus}"`).join(', ')
+  return (detection.value?.missingFields ?? []).map(field => IMPORT_FIELD_LABELS[field]).join(', ')
+})
 
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const isDragging = ref(false)
@@ -169,8 +183,18 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeLeavi
       />
     </section>
 
+    <UAlert
+      v-if="needsMeanings && !canDefineMeanings"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-shield-alert"
+      :title="step === 'map_statuses' ? 'ไฟล์นี้มีสถานะที่ระบบยังไม่รู้จัก' : 'ระบบหาคอลัมน์ที่จำเป็นในไฟล์นี้ไม่เจอ'"
+      :description="`${undefinedItemsText} · ความหมายเหล่านี้มีผลกับแต้มโดยตรง จึงให้ super admin กำหนดเท่านั้น ส่งไฟล์นี้ให้ super admin นำเข้าครั้งแรก หลังจากนั้นทุกคนนำเข้าไฟล์แบบเดียวกันได้ตามปกติ`"
+      class="mt-6"
+    />
+
     <OrderImportColumnMapper
-      v-if="step === 'map_columns' && detection"
+      v-else-if="step === 'map_columns' && detection"
       :header-row="headerRow"
       :data-rows="dataRows.slice(0, 20)"
       :missing-fields="detection.missingFields"
@@ -202,6 +226,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeLeavi
       :summary="summary"
       class="mt-6"
       @again="reset"
+    />
+
+    <OrderImportHistory
+      v-model:platform-filter="historyPlatform"
+      :entries="history"
+      :has-error="hasHistoryError"
+      class="mt-6"
     />
   </div>
 </template>

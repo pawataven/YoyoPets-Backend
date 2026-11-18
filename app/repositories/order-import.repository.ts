@@ -1,7 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '#shared/types/database.types'
 import type { MarketplacePlatform } from '~/types/admin'
-import type { ColumnAlias, FileOrderStatus, ImportField, ImportOrder, ImportSummary } from '~/types/order-import'
+import type {
+  ColumnAlias,
+  FileOrderStatus,
+  ImportField,
+  ImportHistoryEntry,
+  ImportOrder,
+  ImportSummary
+} from '~/types/order-import'
 
 export interface OrderImportRepository {
   listColumnAliases(platform: MarketplacePlatform): Promise<ColumnAlias[]>
@@ -15,6 +22,13 @@ export interface OrderImportRepository {
   finishImport(importId: string): Promise<ImportSummary>
   // Approved orders still waiting for a delivery date from the file after this many days
   countLongWaitingCredits(olderThanDays: number): Promise<number>
+  // Newest first
+  listImportHistory(limit: number, platform: MarketplacePlatform | null): Promise<ImportHistoryEntry[]>
+}
+
+function summaryNumber(summary: Record<string, unknown>, key: string): number {
+  const value = summary[key]
+  return typeof value === 'number' ? value : Number(value ?? 0) || 0
 }
 
 function toSummary(raw: Json): ImportSummary {
@@ -100,6 +114,41 @@ export function createSupabaseOrderImportRepository(supabase: SupabaseClient<Dat
         .lt('reviewed_at', reviewedBefore)
       if (error) throw error
       return count ?? 0
+    },
+
+    async listImportHistory(limit, platform) {
+      let query = supabase
+        .from('order_imports')
+        .select('id, platform, file_name, imported_by, imported_at, status, summary')
+        .order('imported_at', { ascending: false })
+        .limit(limit)
+      if (platform) query = query.eq('platform', platform)
+      const [imports, admins] = await Promise.all([query, supabase.from('admin_users').select('user_id, display_name, email')])
+      if (imports.error) throw imports.error
+      if (admins.error) throw admins.error
+
+      // order_imports.imported_by has no foreign key (it survives account removal), so names are joined here
+      const nameByUserId = new Map(admins.data.map(admin => [admin.user_id, admin.display_name || admin.email]))
+      return imports.data.map((row) => {
+        const summary = (row.summary ?? {}) as Record<string, unknown>
+        const hasSummary = 'orders_total' in summary
+        return {
+          id: row.id,
+          platform: row.platform as ImportHistoryEntry['platform'],
+          fileName: row.file_name,
+          importerName: nameByUserId.get(row.imported_by) ?? null,
+          importedAt: row.imported_at,
+          isInProgress: row.status === 'in_progress',
+          ordersTotal: hasSummary ? summaryNumber(summary, 'orders_total') : null,
+          orderedFrom: typeof summary.ordered_from === 'string' ? summary.ordered_from : null,
+          orderedTo: typeof summary.ordered_to === 'string' ? summary.ordered_to : null,
+          pointsScheduled: summaryNumber(summary, 'points_scheduled'),
+          pointsReleased: summaryNumber(summary, 'points_released'),
+          pointsReduced: summaryNumber(summary, 'points_reduced'),
+          pointsCancelled: summaryNumber(summary, 'points_cancelled'),
+          warningCount: Array.isArray(summary.warning_member_order_ids) ? summary.warning_member_order_ids.length : 0
+        }
+      })
     }
   }
 }
