@@ -14,6 +14,9 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 watch(searchInput, (term) => {
   clearTimeout(searchTimer)
+  // Already in the URL (set by back/forward or the page itself): writing it back would rebuild the query and drop
+  // page-level keys such as focus and review
+  if (term === filters.value.searchTerm) return
   searchTimer = setTimeout(() => {
     filters.value = { ...filters.value, searchTerm: term }
   }, SEARCH_DEBOUNCE_MS)
@@ -30,15 +33,20 @@ function updateFilter<K extends keyof OrderReviewFilters>(key: K, value: OrderRe
   filters.value = { ...filters.value, [key]: value }
 }
 
+const isDateMenuOpen = ref(false)
+
+const dateRange = computed({
+  get: () => filters.value.dateRange,
+  set: dateRange => updateFilter('dateRange', dateRange)
+})
+
+const dateButtonLabel = computed(() =>
+  `${ORDER_DATE_COLUMN_LABELS[orderReviewDateColumn(filters.value)]}: ${orderDateRangeLabel(filters.value.dateRange)}`)
+
 const IMPORT_PLATFORM_NAMES: Record<MarketplacePlatform, string> = { shopee: 'Shopee', lazada: 'Lazada', tiktok: 'TikTok' }
 
 function importSummary(fileImport: OrderFileImport) {
   return `${IMPORT_PLATFORM_NAMES[fileImport.platform]} ${formatThaiDayMonthTime(fileImport.importedAt)}`
-}
-
-const SELECT_UI = {
-  base: 'h-11 rounded-xl bg-white ps-3.5 text-[15px] text-ink ring-[1.5px]',
-  trailingIcon: 'size-5 text-ink'
 }
 </script>
 
@@ -52,48 +60,59 @@ const SELECT_UI = {
         placeholder="ค้นหาเลขคำสั่งซื้อ ชื่อ หรือรหัสสมาชิก"
         aria-label="ค้นหาเลขคำสั่งซื้อ ชื่อ หรือรหัสสมาชิก"
         class="sm:col-span-2 xl:w-90"
-        :ui="{ base: 'h-11 rounded-xl bg-white ps-11 text-[15px] ring-[1.5px]', leadingIcon: 'size-5 text-ink' }"
-      />
-
-      <USelect
-        :model-value="filters.platform"
-        :items="ORDER_PLATFORM_OPTIONS"
-        aria-label="ช่องทาง"
-        class="xl:w-50"
-        :ui="SELECT_UI"
-        @update:model-value="updateFilter('platform', $event)"
+        :ui="{ base: 'h-11 rounded-xl bg-white ps-11 pe-10 text-[15px] ring-[1.5px] [&::-webkit-search-cancel-button]:hidden', leadingIcon: 'size-5 text-ink' }"
       >
-        <template #default="{ modelValue }">
-          ช่องทาง: {{ ORDER_PLATFORM_OPTIONS.find(option => option.value === modelValue)?.label }}
+        <template
+          v-if="searchInput"
+          #trailing
+        >
+          <UButton
+            color="neutral"
+            variant="link"
+            icon="i-lucide-x"
+            aria-label="ล้างคำค้นหา"
+            class="text-muted hover:text-ink"
+            @click="searchInput = ''"
+          />
         </template>
-      </USelect>
+      </UInput>
 
-      <USelect
-        :model-value="filters.matchResult"
-        :items="ORDER_MATCH_OPTIONS"
-        aria-label="ผลตรวจกับไฟล์ร้าน"
-        class="xl:w-60"
-        :ui="SELECT_UI"
-        @update:model-value="updateFilter('matchResult', $event)"
+      <UPopover
+        v-model:open="isDateMenuOpen"
+        :content="{ align: 'start', sideOffset: 8, collisionPadding: 16 }"
+        :ui="{ content: 'rounded-2xl shadow-xl ring-default' }"
       >
-        <template #default="{ modelValue }">
-          ผลตรวจ: {{ ORDER_MATCH_OPTIONS.find(option => option.value === modelValue)?.label }}
-        </template>
-      </USelect>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-calendar"
+          trailing-icon="i-lucide-chevron-down"
+          class="h-11 justify-between rounded-xl bg-white px-3.5 text-[15px] font-normal text-ink ring-[1.5px] xl:min-w-55"
+          :ui="{ leadingIcon: 'size-5 text-ink', trailingIcon: 'size-5 text-ink' }"
+        >
+          <span class="flex-1 truncate text-left">{{ dateButtonLabel }}</span>
+        </UButton>
 
-      <USelect
-        :model-value="filters.submittedWithin"
-        :items="ORDER_SUBMITTED_WITHIN_OPTIONS"
-        icon="i-lucide-calendar"
-        aria-label="ส่งเมื่อ"
-        class="xl:w-55"
-        :ui="{ ...SELECT_UI, base: `${SELECT_UI.base} ps-11`, leadingIcon: 'size-5 text-ink' }"
-        @update:model-value="updateFilter('submittedWithin', $event)"
-      >
-        <template #default="{ modelValue }">
-          ส่งเมื่อ: {{ ORDER_SUBMITTED_WITHIN_OPTIONS.find(option => option.value === modelValue)?.label }}
+        <template #content>
+          <div class="w-[min(300px,calc(100vw-2rem))] p-3">
+            <OrderDateRangeOptions
+              v-model="dateRange"
+              @preset-chosen="isDateMenuOpen = false"
+            />
+          </div>
         </template>
-      </USelect>
+      </UPopover>
+
+      <UButton
+        v-if="hasActiveOrderFilters(filters)"
+        color="neutral"
+        variant="link"
+        icon="i-lucide-x"
+        class="justify-self-start text-[15px] font-bold text-primary-dark"
+        @click="filters = clearOrderFilters(filters)"
+      >
+        ล้างตัวกรอง
+      </UButton>
     </div>
 
     <div class="text-[13px] text-muted xl:ml-auto xl:text-right">

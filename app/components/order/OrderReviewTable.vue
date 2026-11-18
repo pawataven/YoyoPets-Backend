@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import type { OrderReviewItem } from '~/types/admin'
+import type { OrderDateColumn, OrderReviewFilterOptions, OrderReviewFilters, OrderReviewItem, OrderSortKey } from '~/types/admin'
 
 const page = defineModel<number>('page', { required: true })
 const selectedIds = defineModel<string[]>('selectedIds', { required: true })
+// Column headers open menus that sort and filter, so they edit the same filters as the filter bar
+const filters = defineModel<OrderReviewFilters>('filters', { required: true })
 
 const props = defineProps<{
   orders: OrderReviewItem[] | null
@@ -11,14 +13,72 @@ const props = defineProps<{
   isSelectable: boolean
   // The "ทั้งหมด" tab mixes every status, so each row says which tab it belongs to
   showsStatus: boolean
+  filterOptions: OrderReviewFilterOptions | null
   isLoading: boolean
   // Order open in the review drawer, highlighted like the hovered row
   reviewingId: string | null
 }>()
 
+function filterModel<K extends keyof OrderReviewFilters>(key: K) {
+  return computed({
+    get: () => filters.value[key],
+    set: (value: OrderReviewFilters[K]) => (filters.value = { ...filters.value, [key]: value })
+  })
+}
+
+const sort = filterModel('sort')
+const platforms = filterModel('platforms')
+const tierNames = filterModel('tierNames')
+const proof = filterModel('proof')
+const matchResults = filterModel('matchResults')
+
+// The tab's own date leads (after the member); the other one sits at the end. The review queue has no review date.
+const leadDateColumn = computed(() => tabDateColumn(filters.value.tab))
+const trailDateColumn = computed<OrderDateColumn | null>(() => {
+  if (filters.value.tab === 'pending_review') return null
+  return leadDateColumn.value === 'submitted_at' ? 'reviewed_at' : 'submitted_at'
+})
+
+function ariaSort(key: OrderSortKey) {
+  if (filters.value.sort.key !== key) return undefined
+  return filters.value.sort.ascending ? 'ascending' : 'descending'
+}
+
+const tierOptions = computed(() => props.filterOptions?.tierNames.map(name => ({ value: name, label: name })) ?? null)
+const reviewerOptions = computed(() => props.filterOptions?.reviewers.map(reviewer => ({ value: reviewer.id, label: reviewer.name })) ?? null)
+
+const AMOUNT_SORT_LABELS: [string, string] = ['มากสุดก่อน', 'น้อยสุดก่อน']
+
+// Order the admin just jumped to from a decision toast. Its page may take a while to load,
+// so the flash is timed from when the row is scrolled into view, not from the click.
+const highlightedId = defineModel<string | null>('highlightedId', { required: true })
+
 const emit = defineEmits<{
   review: [orderId: string]
 }>()
+
+const HIGHLIGHT_MS = 4000
+let highlightTimer: ReturnType<typeof setTimeout> | undefined
+let flashingOrderId: string | null = null
+onBeforeUnmount(() => clearTimeout(highlightTimer))
+
+watch(() => [highlightedId.value, props.orders] as const, async ([orderId, orders]) => {
+  // A refetch while the row is already flashing must not restart its timer
+  if (!orderId || orderId === flashingOrderId || !orders?.some(order => order.id === orderId)) return
+  await nextTick()
+  document.getElementById(`order-row-${orderId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  flashingOrderId = orderId
+  clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    flashingOrderId = null
+    if (highlightedId.value === orderId) highlightedId.value = null
+  }, HIGHLIGHT_MS)
+})
+
+function rowClass(orderId: string) {
+  if (orderId === highlightedId.value) return 'bg-gold-soft ring-2 ring-inset ring-gold'
+  return selectedIds.value.includes(orderId) ? 'bg-cream' : 'hover:bg-cream/60'
+}
 
 const pageOrderIds = computed(() => props.orders?.map(order => order.id) ?? [])
 const selectedOnPageCount = computed(() => pageOrderIds.value.filter(id => selectedIds.value.includes(id)).length)
@@ -74,7 +134,17 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
               scope="col"
               :class="isSelectable ? 'w-37.5' : 'w-43.5 ps-6'"
             >
-              ช่องทาง
+              <OrderColumnMenu
+                v-model:sort="sort"
+                label="ช่องทาง"
+                :is-filtered="platforms.length > 0"
+              >
+                <OrderCheckList
+                  v-model="platforms"
+                  legend="ช่องทาง"
+                  :options="ORDER_PLATFORM_OPTIONS"
+                />
+              </OrderColumnMenu>
             </th>
             <th
               scope="col"
@@ -86,41 +156,100 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
               scope="col"
               class="w-62.5"
             >
-              สมาชิก
+              <OrderColumnMenu
+                v-model:sort="sort"
+                label="สมาชิก"
+                :is-filtered="tierNames.length > 0"
+              >
+                <OrderCheckList
+                  v-model="tierNames"
+                  legend="ระดับสมาชิก"
+                  :options="tierOptions"
+                />
+              </OrderColumnMenu>
             </th>
             <th
               scope="col"
-              class="w-37.5"
+              class="w-40"
+              :aria-sort="ariaSort(leadDateColumn)"
             >
-              ส่งเมื่อ
+              <OrderDateColumnMenu
+                v-model="filters"
+                :column="leadDateColumn"
+                :reviewer-options="reviewerOptions"
+              />
             </th>
             <th
               scope="col"
               class="w-22.5"
             >
-              หลักฐาน
+              <OrderColumnMenu
+                v-model:sort="sort"
+                label="หลักฐาน"
+                :is-filtered="proof !== 'all'"
+              >
+                <template #default="{ close }">
+                  <URadioGroup
+                    v-model="proof"
+                    legend="หลักฐาน"
+                    :items="ORDER_PROOF_OPTIONS"
+                    :ui="{ legend: 'text-[13px] font-bold text-muted', fieldset: 'gap-2.5', label: 'text-[15px] text-ink' }"
+                    @update:model-value="close"
+                  />
+                </template>
+              </OrderColumnMenu>
             </th>
             <th scope="col">
-              ผลตรวจกับไฟล์ร้าน
+              <OrderColumnMenu
+                v-model:sort="sort"
+                label="ผลตรวจกับไฟล์ร้าน"
+                :is-filtered="matchResults.length > 0"
+              >
+                <OrderCheckList
+                  v-model="matchResults"
+                  legend="ผลตรวจกับไฟล์ร้าน"
+                  :options="ORDER_MATCH_OPTIONS"
+                />
+              </OrderColumnMenu>
             </th>
             <th
               scope="col"
               class="w-27.5 text-right"
+              :aria-sort="ariaSort('amount_baht')"
             >
-              ยอดซื้อ (บาท)
+              <OrderColumnMenu
+                v-model:sort="sort"
+                label="ยอดซื้อ (บาท)"
+                sort-key="amount_baht"
+                :sort-labels="AMOUNT_SORT_LABELS"
+                align="end"
+              />
             </th>
             <th
               scope="col"
               class="w-25 text-right"
+              :aria-sort="ariaSort('points')"
             >
-              แต้ม
+              <OrderColumnMenu
+                v-model:sort="sort"
+                label="แต้ม"
+                sort-key="points"
+                :sort-labels="AMOUNT_SORT_LABELS"
+                align="end"
+              />
             </th>
             <th
-              v-if="!isSelectable"
+              v-if="trailDateColumn"
               scope="col"
               class="w-44 ps-8"
+              :aria-sort="ariaSort(trailDateColumn)"
             >
-              ตรวจโดย
+              <OrderDateColumnMenu
+                v-model="filters"
+                :column="trailDateColumn"
+                :reviewer-options="reviewerOptions"
+                align="end"
+              />
             </th>
             <th
               scope="col"
@@ -167,9 +296,10 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
         >
           <tr
             v-for="order in orders"
+            :id="`order-row-${order.id}`"
             :key="order.id"
-            class="group h-18 border-t border-default text-[15px] transition-colors"
-            :class="selectedIds.includes(order.id) ? 'bg-cream' : 'hover:bg-cream/60'"
+            class="group h-18 border-t border-default text-[15px] transition-colors duration-700"
+            :class="rowClass(order.id)"
           >
             <td
               v-if="isSelectable"
@@ -220,8 +350,12 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
                 </span>
               </span>
             </td>
-            <td class="text-muted">
-              {{ formatThaiDayMonthTime(order.submittedAt) }}
+            <td>
+              <OrderDateCell
+                :order="order"
+                :column="leadDateColumn"
+                :is-sort-column="sort.key === leadDateColumn"
+              />
             </td>
             <td>
               <span
@@ -261,20 +395,22 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
                 class="font-number text-[17px] font-bold text-dimmed"
                 aria-label="ไม่ได้แต้ม"
               >–</span>
+              <span
+                v-if="order.status === 'waiting_return_period'"
+                class="block text-[12px] whitespace-nowrap text-muted"
+              >
+                {{ order.pointsAvailableAt ? `เข้า ${formatThaiDayMonth(order.pointsAvailableAt)}` : 'รอข้อมูลส่งถึง' }}
+              </span>
             </td>
             <td
-              v-if="!isSelectable"
+              v-if="trailDateColumn"
               class="ps-8"
             >
-              <template v-if="order.reviewedAt">
-                <span class="block max-w-40 truncate text-sm font-bold text-ink">{{ order.reviewerName ?? REMOVED_ADMIN_NAME }}</span>
-                <span class="block text-[13px] text-muted">{{ formatThaiDayMonthTime(order.reviewedAt) }}</span>
-              </template>
-              <span
-                v-else
-                class="text-dimmed"
-                aria-label="ยังไม่ได้ตรวจ"
-              >–</span>
+              <OrderDateCell
+                :order="order"
+                :column="trailDateColumn"
+                :is-sort-column="sort.key === trailDateColumn"
+              />
             </td>
             <td class="pe-10 text-right">
               <button

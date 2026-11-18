@@ -9,6 +9,7 @@ import type {
   OrderReviewDetail,
   OrderReviewFilters,
   OrderReviewItem,
+  OrderReviewFilterOptions,
   OrderReviewOutcome,
   OrderReviewStatus,
   OrderSearchResult,
@@ -20,10 +21,16 @@ import type {
 export interface OrderRepository {
   searchOrders(searchTerm: string, limit: number): Promise<SearchResultPage<OrderSearchResult>>
   listReviewOrders(filters: OrderReviewFilters, page: number, pageSize: number): Promise<SearchResultPage<OrderReviewItem>>
+  // How many orders come before this one in the filtered list (its index), or null if the filters hide it
+  countReviewOrdersBefore(filters: OrderReviewFilters, orderId: string): Promise<number | null>
+  // Choices for the member-tier and reviewer column filters
+  getReviewFilterOptions(): Promise<OrderReviewFilterOptions>
   getReviewOrder(orderId: string): Promise<OrderReviewDetail | null>
   getReviewStatuses(orderIds: string[]): Promise<OrderReviewOutcome[]>
   countByStatus(): Promise<OrderStatusCounts>
   getLatestFileImports(): Promise<OrderFileImport[]>
+  // Days after delivery before points become usable, per platform (platform_settings)
+  getReturnWindowDays(): Promise<Record<MarketplacePlatform, number>>
   // Points come from the database (calculate_order_points) so the preview can never disagree with what approval grants
   calculatePoints(amountBaht: number, pointsMultiplier: number): Promise<number>
   approveOrders(orderIds: string[], options: OrderApproveOptions): Promise<OrderBulkResult>
@@ -84,7 +91,8 @@ function toReviewItem(row: ReviewRow): OrderReviewItem {
     points: row.points,
     status: row.review_status as OrderReviewStatus,
     reviewedAt: row.reviewed_at,
-    reviewerName: row.reviewer_name
+    reviewerName: row.reviewer_name,
+    pointsAvailableAt: row.points_available_at
   }
 }
 
@@ -94,6 +102,24 @@ function toBulkResult(result: Database['public']['Functions']['approve_member_or
 }
 
 export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>): OrderRepository {
+  function filteredReviews<Columns extends string>(columns: Columns, filters: OrderReviewFilters, head = false) {
+    let query = supabase.from('member_order_reviews').select(columns, { count: 'exact', head })
+    if (filters.tab !== 'all') query = query.eq('review_status', filters.tab)
+    if (filters.platforms.length) query = query.in('platform', filters.platforms)
+    if (filters.matchResults.length) query = query.in('match_result', filters.matchResults)
+    if (filters.tierNames.length) query = query.in('tier_name', filters.tierNames)
+    if (filters.reviewerIds.length) query = query.in('reviewed_by', filters.reviewerIds)
+    if (filters.proof === 'with') query = query.not('proof_image_path', 'is', null)
+    if (filters.proof === 'without') query = query.is('proof_image_path', null)
+    const dateColumn = orderReviewDateColumn(filters)
+    const { since, until } = orderDateBounds(filters.dateRange)
+    if (since) query = query.gte(dateColumn, since.toISOString())
+    if (until) query = query.lt(dateColumn, until.toISOString())
+    const conditions = searchConditions(filters.searchTerm)
+    if (conditions) query = query.or(conditions)
+    return query
+  }
+
   return {
     async searchOrders(searchTerm, limit) {
       const conditions = searchConditions(searchTerm)
@@ -119,22 +145,58 @@ export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>
     },
 
     async listReviewOrders(filters, page, pageSize) {
-      let query = supabase.from('member_order_reviews').select(REVIEW_COLUMNS, { count: 'exact' })
-      if (filters.tab !== 'all') query = query.eq('review_status', filters.tab)
-      if (filters.platform !== 'all') query = query.eq('platform', filters.platform)
-      if (filters.matchResult !== 'all') query = query.eq('match_result', filters.matchResult)
-      const since = submittedSince(filters.submittedWithin)
-      if (since) query = query.gte('submitted_at', since.toISOString())
-      const conditions = searchConditions(filters.searchTerm)
-      if (conditions) query = query.or(conditions)
-
       const start = (page - 1) * pageSize
-      const { data, count, error } = await query
-        .order('submitted_at', { ascending: false })
+      const { key, ascending } = filters.sort
+      const { data, count, error } = await filteredReviews(REVIEW_COLUMNS, filters)
+        .order(key, { ascending, nullsFirst: false })
         .order('id', { ascending: false })
         .range(start, start + pageSize - 1)
       if (error) throw error
       return { totalCount: count ?? 0, items: data.map(toReviewItem) }
+    },
+
+    // Same order as listReviewOrders (sort column, nulls last, then id desc): rows ahead have a value that sorts earlier,
+    // or the same value and a larger id. Separate counts instead of one or() because the search already uses or()
+    // and PostgREST would not group them.
+    async countReviewOrdersBefore(filters, orderId) {
+      const { key, ascending } = filters.sort
+      const { data: target, error: targetError } = await filteredReviews('id, submitted_at, reviewed_at, amount_baht, points', filters)
+        .eq('id', orderId)
+        .maybeSingle()
+      if (targetError) throw targetError
+      if (!target) return null
+      const targetValue = target[key]
+
+      const [ahead, tied] = await Promise.all(targetValue === null
+        ? [
+            filteredReviews('id', filters, true).not(key, 'is', null),
+            filteredReviews('id', filters, true).is(key, null).gt('id', orderId)
+          ]
+        : [
+            ascending
+              ? filteredReviews('id', filters, true).lt(key, targetValue)
+              : filteredReviews('id', filters, true).gt(key, targetValue),
+            filteredReviews('id', filters, true).eq(key, targetValue).gt('id', orderId)
+          ])
+      if (ahead.error) throw ahead.error
+      if (tied.error) throw tied.error
+      return (ahead.count ?? 0) + (tied.count ?? 0)
+    },
+
+    async getReviewFilterOptions() {
+      const [tiers, admins] = await Promise.all([
+        supabase.from('tiers').select('name').order('sort_order'),
+        // Former admins stay listed: their past decisions are still in the decided tabs
+        supabase.from('admin_users').select('user_id, display_name, email')
+      ])
+      if (tiers.error) throw tiers.error
+      if (admins.error) throw admins.error
+      return {
+        tierNames: tiers.data.map(tier => tier.name),
+        reviewers: admins.data
+          .map(admin => ({ id: admin.user_id, name: admin.display_name || admin.email }))
+          .sort((first, second) => first.name.localeCompare(second.name, 'th'))
+      }
     },
 
     async getReviewOrder(orderId) {
@@ -178,8 +240,7 @@ export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>
         })),
         // A missing or unreadable picture should not block the review
         proofImageUrl: proof?.data?.signedUrl ?? null,
-        rejectionReason: row.rejection_reason,
-        pointsAvailableAt: row.points_available_at
+        rejectionReason: row.rejection_reason
       }
     },
 
@@ -211,6 +272,7 @@ export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>
       const { data, error } = await supabase
         .from('order_imports')
         .select('platform, imported_at')
+        .eq('status', 'completed')
         .order('imported_at', { ascending: false })
         .limit(50)
       if (error) throw error
@@ -221,6 +283,12 @@ export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>
         }
       }
       return [...latestByPlatform.values()]
+    },
+
+    async getReturnWindowDays() {
+      const { data, error } = await supabase.from('platform_settings').select('platform, return_window_days')
+      if (error) throw error
+      return Object.fromEntries(data.map(row => [row.platform, row.return_window_days])) as Record<MarketplacePlatform, number>
     },
 
     async calculatePoints(amountBaht, pointsMultiplier) {

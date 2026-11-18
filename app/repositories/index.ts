@@ -3,6 +3,7 @@ import { createMockAdminNotificationRepository } from './admin-notification.repo
 import { createMockDashboardRepository } from './dashboard.repository'
 import { createSupabaseMemberRepository } from './member.repository'
 import { createSupabaseOrderRepository } from './order.repository'
+import { createSupabaseOrderImportRepository } from './order-import.repository'
 import { createMockRedemptionRepository } from './redemption.repository'
 import { createReportRepository } from './report.repository'
 import { createWorkQueueRepository } from './work-queue.repository'
@@ -23,6 +24,7 @@ export function useRepositories() {
     adminNotification: mockAdminNotificationRepository,
     workQueue: createWorkQueueRepository(order),
     order,
+    orderImport: createSupabaseOrderImportRepository(supabase),
     redemption: createMockRedemptionRepository(),
     dashboard: createMockDashboardRepository(),
     report: createReportRepository(member, import.meta.dev)

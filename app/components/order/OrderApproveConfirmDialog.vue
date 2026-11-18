@@ -21,8 +21,9 @@ watch(() => props.lines, (lines) => {
   if (lines.length) shownLines.value = lines
 }, { immediate: true })
 
-const totalPoints = computed(() => shownLines.value.reduce((sum, line) => sum + (line.points ?? 0), 0))
-const hasNonEarningLines = computed(() => shownLines.value.some(line => !line.points))
+const approvableLines = computed(() => shownLines.value.filter(line => !line.skipReason))
+const skippedLines = computed(() => shownLines.value.filter(line => line.skipReason))
+const totalPoints = computed(() => approvableLines.value.reduce((sum, line) => sum + (line.points ?? 0), 0))
 
 const creditModeText = computed(() => (props.creditMode === 'immediately'
   ? 'ให้แต้มใช้ได้ทันที · ย้ายไปแท็บ "อนุมัติแล้ว"'
@@ -41,17 +42,24 @@ const creditModeText = computed(() => (props.creditMode === 'immediately'
       <form @submit.prevent="emit('confirm')">
         <div class="px-5 pt-6 pb-5 sm:px-8 sm:pt-8">
           <DialogTitle class="font-sans text-2xl font-bold text-ink">
-            ยืนยันอนุมัติ {{ shownLines.length.toLocaleString('th-TH') }} รายการ
+            ยืนยันอนุมัติ {{ approvableLines.length.toLocaleString('th-TH') }} รายการ
           </DialogTitle>
           <DialogDescription class="mt-1 text-[15px] text-muted">
             ตรวจสอบรายการอีกครั้งก่อนยืนยัน แต้มจะเข้าบัญชีสมาชิกตามนี้
           </DialogDescription>
 
           <OrderDecisionList
-            :lines="shownLines"
+            v-if="approvableLines.length"
+            :lines="approvableLines"
             shows-points
             class="mt-5"
           />
+          <p
+            v-else
+            class="mt-5 rounded-xl bg-neutral-soft px-4 py-3 text-[15px] text-ink"
+          >
+            ไม่มีรายการที่อนุมัติพร้อมกันได้ เปิด "ตรวจสอบ" ทีละรายการแทน
+          </p>
 
           <dl class="mt-4 space-y-2 text-[15px]">
             <div class="flex items-center justify-between gap-4">
@@ -72,12 +80,20 @@ const creditModeText = computed(() => (props.creditMode === 'immediately'
             </div>
           </dl>
 
-          <p
-            v-if="hasNonEarningLines"
-            class="mt-4 rounded-xl bg-gold/30 px-4 py-3 text-sm text-pending"
+          <section
+            v-if="skippedLines.length"
+            class="mt-5"
           >
-            รายการที่ไม่ได้แต้ม (เช่น เลขซ้ำ คำสั่งซื้อถูกยกเลิก) จะถูกข้ามและยังอยู่ในแท็บรอตรวจ
-          </p>
+            <p class="rounded-t-xl bg-gold/30 px-4 py-3 text-sm text-pending">
+              <span class="font-bold">จะถูกข้าม {{ skippedLines.length.toLocaleString('th-TH') }} รายการ</span>
+              · ยังอยู่ในแท็บรอตรวจ รายการยอดไม่ตรงหรือไม่พบในไฟล์ต้องเปิดตรวจทีละรายการ เพื่อดูยอดและแก้ยอดที่ใช้คิดแต้ม
+            </p>
+            <OrderDecisionList
+              :lines="skippedLines"
+              :shows-points="false"
+              class="rounded-t-none border-t-0"
+            />
+          </section>
         </div>
 
         <div class="flex justify-end gap-3 border-t border-default px-5 py-4 sm:px-8 sm:py-5">
@@ -94,6 +110,7 @@ const creditModeText = computed(() => (props.creditMode === 'immediately'
             type="submit"
             icon="i-lucide-check"
             :loading="isBusy"
+            :disabled="!approvableLines.length"
             class="h-12 flex-1 justify-center rounded-xl px-7 text-[17px] font-bold sm:flex-none"
           >
             ยืนยันอนุมัติ

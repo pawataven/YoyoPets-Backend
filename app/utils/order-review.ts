@@ -1,19 +1,21 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 import type {
   MarketplacePlatform,
+  OrderDateColumn,
+  OrderDatePreset,
+  OrderDateRange,
   OrderDecisionLine,
   OrderMatchResult,
+  OrderProofFilter,
   OrderReviewItem,
   OrderReviewFilters,
+  OrderReviewSort,
   OrderReviewStatus,
   OrderReviewTab,
-  OrderSubmittedWithin
+  OrderSortKey
 } from '~/types/admin'
 
 export const ORDER_REVIEW_PAGE_SIZE = 8
-
-// Display only ("พ้นระยะคืนสินค้า (7 วัน)"); the rule itself is order_return_window() in the database
-export const ORDER_RETURN_WINDOW_DAYS = 7
 
 // Tab order and wording from Figma 20:1293; "ทั้งหมด" has no count in the design
 export const ORDER_REVIEW_TABS: { value: OrderReviewTab, label: string }[] = [
@@ -24,46 +26,146 @@ export const ORDER_REVIEW_TABS: { value: OrderReviewTab, label: string }[] = [
   { value: 'all', label: 'ทั้งหมด' }
 ]
 
-export const ORDER_PLATFORM_OPTIONS: { value: MarketplacePlatform | 'all', label: string }[] = [
-  { value: 'all', label: 'ทั้งหมด' },
+export const ORDER_PLATFORM_OPTIONS: { value: MarketplacePlatform, label: string }[] = [
   { value: 'shopee', label: 'Shopee' },
   { value: 'lazada', label: 'Lazada' },
   { value: 'tiktok', label: 'TikTok Shop' }
 ]
 
-export const ORDER_MATCH_OPTIONS: { value: OrderMatchResult | 'all', label: string }[] = [
-  { value: 'all', label: 'ทั้งหมด' },
-  ...(Object.keys(ORDER_MATCH_BADGES) as OrderMatchResult[]).map(value => ({ value, label: ORDER_MATCH_BADGES[value].label }))
-]
+export const ORDER_MATCH_OPTIONS: { value: OrderMatchResult, label: string }[] = (Object.keys(ORDER_MATCH_BADGES) as OrderMatchResult[])
+  .map(value => ({ value, label: ORDER_MATCH_BADGES[value].label }))
 
-export const ORDER_SUBMITTED_WITHIN_OPTIONS: { value: OrderSubmittedWithin, label: string }[] = [
+export const ORDER_DATE_PRESET_OPTIONS: { value: OrderDatePreset, label: string }[] = [
   { value: 'today', label: 'วันนี้' },
+  { value: 'yesterday', label: 'เมื่อวาน' },
   { value: '7d', label: '7 วันล่าสุด' },
   { value: '30d', label: '30 วันล่าสุด' },
   { value: 'all', label: 'ทั้งหมด' }
 ]
 
+export const ORDER_PROOF_OPTIONS: { value: OrderProofFilter, label: string }[] = [
+  { value: 'all', label: 'ทั้งหมด' },
+  { value: 'with', label: 'มีรูป' },
+  { value: 'without', label: 'ไม่มีรูป' }
+]
+
+export const ORDER_DATE_COLUMN_LABELS: Record<OrderDateColumn, string> = {
+  submitted_at: 'ส่งเมื่อ',
+  reviewed_at: 'ตรวจเมื่อ'
+}
+
+const DEFAULT_DATE_PRESET: OrderDatePreset = '7d'
+const DEFAULT_DATE_RANGE: OrderDateRange = { preset: DEFAULT_DATE_PRESET }
+
+// The decided tabs are a history of decisions, so by default they sort (latest first) and filter by when the order was
+// reviewed: an order sent 10 days ago and approved just now belongs at the top of "อนุมัติแล้ว", not hidden by "7 วันล่าสุด".
+// The review queue and "ทั้งหมด" go by when the member submitted.
+export function tabDateColumn(tab: OrderReviewTab): OrderDateColumn {
+  return tab === 'pending_review' || tab === 'all' ? 'submitted_at' : 'reviewed_at'
+}
+
+export function defaultOrderReviewSort(tab: OrderReviewTab): OrderReviewSort {
+  return { key: tabDateColumn(tab), ascending: false }
+}
+
+// Nothing in the review queue has been reviewed yet
+export function sortableOrderKeys(tab: OrderReviewTab): OrderSortKey[] {
+  return tab === 'pending_review'
+    ? ['submitted_at', 'amount_baht', 'points']
+    : ['submitted_at', 'reviewed_at', 'amount_baht', 'points']
+}
+
+// The date range applies to the date the rows are sorted by, so the dates in view, their order and the filter agree.
+// Sorting by amount or points keeps the tab's own date.
+export function orderReviewDateColumn(filters: Pick<OrderReviewFilters, 'tab' | 'sort'>): OrderDateColumn {
+  const { key } = filters.sort
+  return key === 'submitted_at' || key === 'reviewed_at' ? key : tabDateColumn(filters.tab)
+}
+
 export const DEFAULT_ORDER_REVIEW_FILTERS: OrderReviewFilters = {
   tab: 'pending_review',
   searchTerm: '',
-  platform: 'all',
-  matchResult: 'all',
-  submittedWithin: '7d'
+  platforms: [],
+  matchResults: [],
+  tierNames: [],
+  proof: 'all',
+  reviewerIds: [],
+  dateRange: DEFAULT_DATE_RANGE,
+  sort: defaultOrderReviewSort('pending_review')
 }
 
 const REVIEW_STATUSES: OrderReviewStatus[] = ['pending_review', 'waiting_return_period', 'approved', 'rejected', 'cancelled']
+
+const SORT_URL_VALUES: Record<OrderSortKey, string> = {
+  submitted_at: 'submitted',
+  reviewed_at: 'reviewed',
+  amount_baht: 'amount',
+  points: 'points'
+}
+
+const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+// A malformed id in an in() filter makes Postgres reject the whole query
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function pickOption<T extends string>(raw: unknown, allowed: readonly T[], fallback: T): T {
   return typeof raw === 'string' && (allowed as readonly string[]).includes(raw) ? raw as T : fallback
 }
 
+function listFromQuery(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw) return []
+  return [...new Set(raw.split(',').filter(Boolean))]
+}
+
+function allowedListFromQuery<T extends string>(raw: unknown, allowed: readonly T[]): T[] {
+  return listFromQuery(raw).filter((value): value is T => (allowed as readonly string[]).includes(value))
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days)
+}
+
+export function parseIsoDay(day: string) {
+  const [year, month, dayOfMonth] = day.split('-').map(Number)
+  return new Date(year!, month! - 1, dayOfMonth!)
+}
+
+export function toIsoDay(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function isIsoDay(raw: unknown): raw is string {
+  return typeof raw === 'string' && ISO_DAY_PATTERN.test(raw) && toIsoDay(parseIsoDay(raw)) === raw
+}
+
+function dateRangeFromQuery(query: LocationQuery): OrderDateRange {
+  const { from, to } = query
+  if (isIsoDay(from) && isIsoDay(to) && from <= to) return { from, to }
+  return { preset: pickOption(query.within, ORDER_DATE_PRESET_OPTIONS.map(option => option.value), DEFAULT_DATE_PRESET) }
+}
+
+function sortFromQuery(query: LocationQuery, tab: OrderReviewTab): OrderReviewSort {
+  const fallback = defaultOrderReviewSort(tab)
+  const key = (Object.keys(SORT_URL_VALUES) as OrderSortKey[]).find(sortKey => SORT_URL_VALUES[sortKey] === query.sort) ?? fallback.key
+  if (!sortableOrderKeys(tab).includes(key)) return fallback
+  return { key, ascending: query.dir === 'asc' }
+}
+
 export function orderReviewFiltersFromQuery(query: LocationQuery): OrderReviewFilters {
+  const tab = pickOption(query.tab, [...REVIEW_STATUSES, 'all'], DEFAULT_ORDER_REVIEW_FILTERS.tab)
   return {
-    tab: pickOption(query.tab, [...REVIEW_STATUSES, 'all'], DEFAULT_ORDER_REVIEW_FILTERS.tab),
+    tab,
     searchTerm: typeof query.q === 'string' ? query.q : '',
-    platform: pickOption(query.platform, ORDER_PLATFORM_OPTIONS.map(option => option.value), 'all'),
-    matchResult: pickOption(query.match, ORDER_MATCH_OPTIONS.map(option => option.value), 'all'),
-    submittedWithin: pickOption(query.within, ORDER_SUBMITTED_WITHIN_OPTIONS.map(option => option.value), DEFAULT_ORDER_REVIEW_FILTERS.submittedWithin)
+    platforms: allowedListFromQuery(query.platform, ORDER_PLATFORM_OPTIONS.map(option => option.value)),
+    matchResults: allowedListFromQuery(query.match, ORDER_MATCH_OPTIONS.map(option => option.value)),
+    tierNames: listFromQuery(query.tier),
+    proof: pickOption(query.proof, ORDER_PROOF_OPTIONS.map(option => option.value), 'all'),
+    reviewerIds: tab === 'pending_review' ? [] : listFromQuery(query.reviewer).filter(id => UUID_PATTERN.test(id)),
+    dateRange: dateRangeFromQuery(query),
+    sort: sortFromQuery(query, tab)
   }
 }
 
@@ -74,15 +176,77 @@ export function orderReviewPageFromQuery(query: LocationQuery) {
 
 // Defaults are left out so the plain /orders URL stays clean
 export function orderReviewQuery(filters: OrderReviewFilters, page: number): LocationQueryRaw {
-  const defaults = DEFAULT_ORDER_REVIEW_FILTERS
+  const { dateRange, sort } = filters
+  const isCustomRange = 'from' in dateRange
   return {
-    tab: filters.tab === defaults.tab ? undefined : filters.tab,
+    tab: filters.tab === DEFAULT_ORDER_REVIEW_FILTERS.tab ? undefined : filters.tab,
     q: filters.searchTerm.trim() || undefined,
-    platform: filters.platform === defaults.platform ? undefined : filters.platform,
-    match: filters.matchResult === defaults.matchResult ? undefined : filters.matchResult,
-    within: filters.submittedWithin === defaults.submittedWithin ? undefined : filters.submittedWithin,
+    platform: filters.platforms.join(',') || undefined,
+    match: filters.matchResults.join(',') || undefined,
+    tier: filters.tierNames.join(',') || undefined,
+    proof: filters.proof === 'all' ? undefined : filters.proof,
+    reviewer: filters.reviewerIds.join(',') || undefined,
+    within: isCustomRange || dateRange.preset === DEFAULT_DATE_PRESET ? undefined : dateRange.preset,
+    from: isCustomRange ? dateRange.from : undefined,
+    to: isCustomRange ? dateRange.to : undefined,
+    sort: sort.key === defaultOrderReviewSort(filters.tab).key ? undefined : SORT_URL_VALUES[sort.key],
+    dir: sort.ascending ? 'asc' : undefined,
     page: page > 1 ? String(page) : undefined
   }
+}
+
+// Each tab has its own natural order, and the review queue has no reviewer to filter by
+export function withOrderReviewTab(filters: OrderReviewFilters, tab: OrderReviewTab): OrderReviewFilters {
+  return {
+    ...filters,
+    tab,
+    sort: defaultOrderReviewSort(tab),
+    reviewerIds: tab === 'pending_review' ? [] : filters.reviewerIds
+  }
+}
+
+export function isDefaultOrderDateRange(range: OrderDateRange) {
+  return 'preset' in range && range.preset === DEFAULT_DATE_PRESET
+}
+
+export function hasActiveOrderFilters(filters: OrderReviewFilters) {
+  return filters.platforms.length > 0
+    || filters.matchResults.length > 0
+    || filters.tierNames.length > 0
+    || filters.proof !== 'all'
+    || filters.reviewerIds.length > 0
+    || !isDefaultOrderDateRange(filters.dateRange)
+}
+
+// Search, tab and sort stay: the search box belongs to the admin, and sorting hides nothing
+export function clearOrderFilters(filters: OrderReviewFilters): OrderReviewFilters {
+  return {
+    ...filters,
+    platforms: [],
+    matchResults: [],
+    tierNames: [],
+    proof: 'all',
+    reviewerIds: [],
+    dateRange: DEFAULT_DATE_RANGE
+  }
+}
+
+// [since, until): until is null when the range runs to now. Days are the browser's local days (the shop is in Thailand).
+export function orderDateBounds(range: OrderDateRange, now = new Date()): { since: Date | null, until: Date | null } {
+  if ('from' in range) return { since: parseIsoDay(range.from), until: addDays(parseIsoDay(range.to), 1) }
+  const startOfToday = startOfDay(now)
+  switch (range.preset) {
+    case 'today': return { since: startOfToday, until: null }
+    case 'yesterday': return { since: addDays(startOfToday, -1), until: startOfToday }
+    case '7d': return { since: addDays(startOfToday, -6), until: null }
+    case '30d': return { since: addDays(startOfToday, -29), until: null }
+    case 'all': return { since: null, until: null }
+  }
+}
+
+export function orderDateRangeLabel(range: OrderDateRange) {
+  if ('preset' in range) return ORDER_DATE_PRESET_OPTIONS.find(option => option.value === range.preset)!.label
+  return formatThaiDateRange(parseIsoDay(range.from), parseIsoDay(range.to))
 }
 
 export function toOrderDecisionLine(order: OrderReviewItem): OrderDecisionLine {
@@ -93,15 +257,15 @@ export function toOrderDecisionLine(order: OrderReviewItem): OrderDecisionLine {
     memberName: order.member.fullName,
     memberCode: order.member.memberCode,
     amountBaht: order.amountBaht,
-    points: order.points
+    points: order.points,
+    skipReason: null
   }
 }
 
-// Earliest submission time the filter still includes, or null for no limit
-export function submittedSince(within: OrderSubmittedWithin, now = new Date()) {
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  if (within === 'today') return startOfToday
-  if (within === '7d') return new Date(startOfToday.getFullYear(), startOfToday.getMonth(), startOfToday.getDate() - 6)
-  if (within === '30d') return new Date(startOfToday.getFullYear(), startOfToday.getMonth(), startOfToday.getDate() - 29)
+// Mirrors approve_member_orders for a multi-order call: only exact matches are credited without a person looking;
+// mismatched and not-in-file orders need the drawer, where the amount used can be checked and corrected
+export function bulkApprovalSkipReason(order: OrderReviewItem): string | null {
+  if (order.matchResult === 'amount_mismatch' || order.matchResult === 'not_in_file') return 'ต้องตรวจทีละรายการ'
+  if (order.points === null) return 'ให้แต้มไม่ได้'
   return null
 }

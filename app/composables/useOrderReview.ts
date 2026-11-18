@@ -19,6 +19,8 @@ export function useOrderReview(filters: Ref<OrderReviewFilters>, page: Ref<numbe
     { server: false }
   )
 
+  const { data: filterOptions } = useAsyncData('order-review-filter-options', () => order.getReviewFilterOptions(), { server: false })
+
   async function refreshAfterChange() {
     await Promise.all([refreshOrderPage(), refreshOverview(), refreshNuxtData('work-queue-counts')])
   }
@@ -41,9 +43,15 @@ export function useOrderReview(filters: Ref<OrderReviewFilters>, page: Ref<numbe
     return { ...result, outcomes }
   }
 
+  function countOrdersBefore(targetFilters: OrderReviewFilters, orderId: string) {
+    return order.countReviewOrdersBefore(targetFilters, orderId)
+  }
+
   return {
+    countOrdersBefore,
     orderPage,
     overview,
+    filterOptions,
     isLoadingOrders: computed(() => orderPageStatus.value === 'pending'),
     hasOrdersError: computed(() => orderPageStatus.value === 'error'),
     approveOrders,

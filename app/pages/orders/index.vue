@@ -29,10 +29,10 @@ const reviewingId = computed<string | null>({
 
 const selectedTab = computed({
   get: () => filters.value.tab,
-  set: tab => (filters.value = { ...filters.value, tab })
+  set: tab => (filters.value = withOrderReviewTab(filters.value, tab))
 })
 
-const { orderPage, overview, isLoadingOrders, hasOrdersError, approveOrders, rejectOrders } = useOrderReview(filters, page)
+const { orderPage, overview, filterOptions, isLoadingOrders, hasOrdersError, approveOrders, rejectOrders, countOrdersBefore } = useOrderReview(filters, page)
 
 const isSelectable = computed(() => filters.value.tab === 'pending_review')
 const selectedIds = ref<string[]>([])
@@ -42,9 +42,10 @@ watch(() => JSON.stringify(orderReviewQuery(filters.value, page.value)), () => {
   selectedIds.value = []
 })
 
-// Selection is cleared on every page or filter change, so every selected order is on the current page
+// Selection is cleared on every page or filter change, so every selected order is on the current page.
+// Only what a bulk approval would actually credit counts toward the total.
 const selectedPoints = computed(() => (orderPage.value?.items ?? [])
-  .filter(order => selectedIds.value.includes(order.id))
+  .filter(order => selectedIds.value.includes(order.id) && !bulkApprovalSkipReason(order))
   .reduce((sum, order) => sum + (order.points ?? 0), 0))
 
 const lastPage = computed(() => Math.max(1, Math.ceil((orderPage.value?.totalCount ?? 0) / ORDER_REVIEW_PAGE_SIZE)))
@@ -93,9 +94,10 @@ const isBusy = ref(false)
 
 // Every decision goes through a confirmation that recaps the orders (user request 2026-11-17).
 // The bulk bar decides the selection; the drawer decides the open order with the amount and points shown there.
-const selectedLines = computed(() => (orderPage.value?.items ?? [])
-  .filter(order => selectedIds.value.includes(order.id))
-  .map(toOrderDecisionLine))
+const selectedOrders = computed(() => (orderPage.value?.items ?? []).filter(order => selectedIds.value.includes(order.id)))
+const selectedLines = computed(() => selectedOrders.value.map(toOrderDecisionLine))
+const selectedApprovalLines = computed(() => selectedOrders.value
+  .map(order => ({ ...toOrderDecisionLine(order), skipReason: bulkApprovalSkipReason(order) })))
 
 const pendingApproval = ref<{ lines: OrderDecisionLine[], options: OrderApproveOptions } | null>(null)
 const isApproveConfirmOpen = computed({
@@ -117,13 +119,42 @@ function skippedNote(skippedCount: number, reason: string) {
   return skippedCount ? `ข้าม ${skippedCount.toLocaleString('th-TH')} รายการ (${reason})` : undefined
 }
 
-// Searching by the order number puts it on page 1 of its new tab whatever the other filters were
-function openOrderInItsTab(outcome: OrderReviewOutcome) {
-  const query = orderReviewQuery(
-    { tab: outcome.status, searchTerm: outcome.orderNo, platform: 'all', matchResult: 'all', submittedWithin: 'all' },
-    1
-  )
-  navigateTo({ query: { ...query, review: outcome.id } })
+// Row flashed after "ไปดูรายการนี้" so the eye lands on it; the table times the flash once the row is on screen
+const highlightedOrderId = ref<string | null>(null)
+// If the row never loads (failed fetch, filters changed first), drop the id so it can't flash when the admin pages there later
+const UNSHOWN_HIGHLIGHT_TIMEOUT_MS = 15000
+let unshownHighlightTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(unshownHighlightTimer))
+
+// Moves to the order's new tab and the page it sits on, keeping the admin's search and filters (they own them).
+// If those filters hide it there, the tab still switches and the toast offers its details instead.
+async function showOrderInList(outcome: OrderReviewOutcome) {
+  const targetFilters = withOrderReviewTab(filters.value, outcome.status)
+  let ordersBefore: number | null
+  try {
+    ordersBefore = await countOrdersBefore(targetFilters, outcome.id)
+  } catch {
+    ordersBefore = null
+  }
+
+  if (ordersBefore === null) {
+    filters.value = targetFilters
+    toast.add({
+      title: `ตัวกรองที่ใช้อยู่ซ่อนรายการ ${outcome.orderNo}`,
+      description: 'ลองล้างคำค้นหาหรือเปลี่ยนช่วงวันที่',
+      color: 'warning',
+      icon: 'i-lucide-filter',
+      actions: [{ label: 'เปิดรายละเอียด', color: 'neutral', variant: 'outline', size: 'sm', onClick: () => { reviewingId.value = outcome.id } }]
+    })
+    return
+  }
+
+  clearTimeout(unshownHighlightTimer)
+  highlightedOrderId.value = outcome.id
+  unshownHighlightTimer = setTimeout(() => {
+    if (highlightedOrderId.value === outcome.id) highlightedOrderId.value = null
+  }, UNSHOWN_HIGHLIGHT_TIMEOUT_MS)
+  navigateTo({ query: orderReviewQuery(targetFilters, Math.floor(ordersBefore / ORDER_REVIEW_PAGE_SIZE) + 1) })
 }
 
 // Decided orders leave the current tab, so the toast says where they went and links there
@@ -139,7 +170,7 @@ function decisionToast(title: string, outcomes: OrderReviewOutcome[], note: stri
       : undefined
 
   const actions = outcomes.length === 1
-    ? [{ label: 'ไปดูรายการนี้', onClick: () => openOrderInItsTab(outcomes[0]!) }]
+    ? [{ label: 'ไปดูรายการนี้', onClick: () => showOrderInList(outcomes[0]!) }]
     : destinations.map(([status]) => ({
         label: `ไปแท็บ ${ORDER_STATUS_BADGES[status].label}`,
         onClick: () => { selectedTab.value = status }
@@ -158,7 +189,9 @@ function decisionToast(title: string, outcomes: OrderReviewOutcome[], note: stri
 async function confirmApproval() {
   const approval = pendingApproval.value
   if (isBusy.value || !approval) return
-  const orderIds = approval.lines.map(line => line.id)
+  // The database skips these too; leaving them out keeps the toast's skipped count to surprises only
+  const orderIds = approval.lines.filter(line => !line.skipReason).map(line => line.id)
+  if (!orderIds.length) return
   isBusy.value = true
   try {
     const { updatedCount, skippedCount, outcomes } = await approveOrders(orderIds, approval.options)
@@ -257,7 +290,7 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       :is-busy="isBusy"
       class="mt-4"
       @clear="selectedIds = []"
-      @approve="pendingApproval = { lines: selectedLines, options: { creditMode: 'after_return_window' } }"
+      @approve="pendingApproval = { lines: selectedApprovalLines, options: { creditMode: 'after_return_window' } }"
       @reject="rejectLines = selectedLines"
     />
 
@@ -273,10 +306,13 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
     <OrderReviewTable
       v-model:page="page"
       v-model:selected-ids="selectedIds"
+      v-model:highlighted-id="highlightedOrderId"
+      v-model:filters="filters"
       :orders="orderPage?.items ?? null"
       :total-count="orderPage?.totalCount ?? 0"
       :is-selectable="isSelectable"
       :shows-status="filters.tab === 'all'"
+      :filter-options="filterOptions ?? null"
       :is-loading="isLoadingOrders"
       :reviewing-id="reviewingId"
       class="mt-4"

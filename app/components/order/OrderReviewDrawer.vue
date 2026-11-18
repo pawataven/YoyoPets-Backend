@@ -79,9 +79,10 @@ const formulaText = computed(() => {
   return `${amountBaht.value.toLocaleString('th-TH')} ÷ 100 × ${order.pointsMultiplier} (${order.member.tierName}) = ${rawText}${rounding}`
 })
 
+// Without a delivery date in the file the points wait for a later import (spec 2026-11-18), not a fixed day count
 const returnWindowLabel = computed(() => {
   const endsAt = detail.value?.fileRecord?.returnWindowEndsAt
-  return endsAt ? `(${formatThaiDayMonth(endsAt)})` : `(${ORDER_RETURN_WINDOW_DAYS} วันหลังอนุมัติ)`
+  return endsAt ? `(${formatThaiDayMonth(endsAt)})` : '(รอวันส่งถึงจากไฟล์)'
 })
 
 const memberVisibleChange = computed(() => {
@@ -123,7 +124,9 @@ const reviewedSummary = computed(() => {
   if (order.status === 'rejected') return { tone: 'bg-primary-soft/70 text-primary-dark', text: `ไม่อนุมัติ · ${order.rejectionReason ?? ''}`, byline }
   if (order.status === 'cancelled') return { tone: 'bg-neutral-soft text-muted', text: 'ยกเลิกแล้ว', byline }
   const points = order.points === null ? '' : ` · +${order.points.toLocaleString('th-TH')} แต้ม`
-  const availability = order.pointsAvailableAt ? ` · แต้มใช้ได้ตั้งแต่ ${formatThaiShortDate(order.pointsAvailableAt)}` : ''
+  const availability = order.pointsAvailableAt
+    ? ` · แต้มใช้ได้ตั้งแต่ ${formatThaiShortDate(order.pointsAvailableAt)}`
+    : ' · แต้มรอวันส่งถึงจากไฟล์'
   return { tone: 'bg-success/10 text-success', text: `อนุมัติแล้ว${points}${availability}`, byline }
 })
 

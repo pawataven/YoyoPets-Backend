@@ -5,12 +5,15 @@ const props = defineProps<{
   order: OrderReviewDetail
 }>()
 
-const FILE_STATUS_LABELS: Record<PlatformOrderStatus, string> = {
+const FILE_RECORD_STATUS_LABELS: Record<PlatformOrderStatus, string> = {
   pending: 'ยังไม่จัดส่ง',
   completed: 'จัดส่งสำเร็จ',
+  closed: 'จบแล้ว คืนไม่ได้',
   cancelled: 'ยกเลิก',
   returned: 'คืนสินค้า'
 }
+
+const returnWindowDays = useReturnWindowDays()
 
 const TONES = {
   success: { card: 'bg-success/10', heading: 'text-success', icon: 'i-lucide-check' },
@@ -43,7 +46,7 @@ const summary = computed(() => {
 const fileStatusText = computed(() => {
   const record = props.order.fileRecord
   if (!record) return '–'
-  const label = FILE_STATUS_LABELS[record.status]
+  const label = FILE_RECORD_STATUS_LABELS[record.status]
   return record.status === 'completed' && record.deliveredAt ? `${label} ${formatThaiShortDate(record.deliveredAt)}` : label
 })
 
@@ -109,10 +112,10 @@ function formatBaht(amount: number | null) {
       </div>
       <div class="flex justify-between gap-4">
         <dt class="text-muted">
-          พ้นระยะคืนสินค้า ({{ ORDER_RETURN_WINDOW_DAYS }} วัน)
+          พ้นระยะคืนสินค้า<template v-if="returnWindowDays"> ({{ returnWindowDays[order.platform] }} วันหลังส่งถึง)</template>
         </dt>
         <dd class="text-right font-bold text-ink">
-          {{ order.fileRecord?.returnWindowEndsAt ? formatThaiShortDate(order.fileRecord.returnWindowEndsAt) : 'นับจากวันที่จัดส่ง' }}
+          {{ order.fileRecord?.returnWindowEndsAt ? formatThaiShortDate(order.fileRecord.returnWindowEndsAt) : 'รอวันส่งถึงจากไฟล์' }}
         </dd>
       </div>
     </dl>

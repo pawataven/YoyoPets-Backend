@@ -30,7 +30,13 @@ defineProps<{
           {{ line.amountBaht === null ? '–' : `${line.amountBaht.toLocaleString('th-TH')} บาท` }}
         </span>
         <span
-          v-if="showsPoints"
+          v-if="line.skipReason"
+          class="block text-sm font-bold text-pending"
+        >
+          {{ line.skipReason }}
+        </span>
+        <span
+          v-else-if="showsPoints"
           class="block font-number text-sm font-bold"
           :class="line.points ? 'text-success' : 'text-dimmed'"
         >

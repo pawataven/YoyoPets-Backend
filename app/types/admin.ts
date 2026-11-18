@@ -102,9 +102,11 @@ export interface OrderReviewItem {
   // Set once an admin approves, rejects or cancels; the name is null if that admin account was removed
   reviewedAt: string | null
   reviewerName: string | null
+  // When approved points become usable; null while an approved order waits for the file's delivery date
+  pointsAvailableAt: string | null
 }
 
-export type PlatformOrderStatus = 'pending' | 'completed' | 'cancelled' | 'returned'
+export type PlatformOrderStatus = 'pending' | 'completed' | 'closed' | 'cancelled' | 'returned'
 
 // The order as it appears in the latest Seller Center file
 export interface PlatformOrderRecord {
@@ -131,7 +133,6 @@ export interface OrderReviewDetail extends OrderReviewItem {
   // Short-lived signed URL; null when the member attached no picture
   proofImageUrl: string | null
   rejectionReason: string | null
-  pointsAvailableAt: string | null
 }
 
 // "แต้มเข้าเมื่อพ้นระยะคืนสินค้า" (recommended) or "ให้แต้มใช้ได้ทันที" in the review drawer
@@ -152,6 +153,8 @@ export interface OrderDecisionLine {
   memberCode: string
   amountBaht: number | null
   points: number | null
+  // Set when approve_member_orders will skip this order in a bulk approval, so the dialog can say why up front
+  skipReason: string | null
 }
 
 // Where an order landed after a decision, so the admin can follow it to its new tab
@@ -162,14 +165,42 @@ export interface OrderReviewOutcome {
 }
 
 export type OrderReviewTab = OrderReviewStatus | 'all'
-export type OrderSubmittedWithin = 'today' | '7d' | '30d' | 'all'
 
+export type OrderDateColumn = 'submitted_at' | 'reviewed_at'
+export type OrderSortKey = OrderDateColumn | 'amount_baht' | 'points'
+
+export interface OrderReviewSort {
+  key: OrderSortKey
+  ascending: boolean
+}
+
+export type OrderDatePreset = 'today' | 'yesterday' | '7d' | '30d' | 'all'
+// Custom days are local calendar days as YYYY-MM-DD, both ends included
+export type OrderDateRange = { preset: OrderDatePreset } | { from: string, to: string }
+
+export type OrderProofFilter = 'all' | 'with' | 'without'
+
+// An empty list means that column is not filtered
 export interface OrderReviewFilters {
   tab: OrderReviewTab
   searchTerm: string
-  platform: MarketplacePlatform | 'all'
-  matchResult: OrderMatchResult | 'all'
-  submittedWithin: OrderSubmittedWithin
+  platforms: MarketplacePlatform[]
+  matchResults: OrderMatchResult[]
+  tierNames: string[]
+  proof: OrderProofFilter
+  reviewerIds: string[]
+  dateRange: OrderDateRange
+  sort: OrderReviewSort
+}
+
+export interface OrderReviewer {
+  id: string
+  name: string
+}
+
+export interface OrderReviewFilterOptions {
+  tierNames: string[]
+  reviewers: OrderReviewer[]
 }
 
 export type OrderStatusCounts = Record<OrderReviewStatus, number>
