@@ -86,7 +86,7 @@ const creditModeText = computed(() => (props.creditMode === 'immediately'
           >
             <p class="rounded-t-xl bg-gold/30 px-4 py-3 text-sm text-pending">
               <span class="font-bold">จะถูกข้าม {{ skippedLines.length.toLocaleString('th-TH') }} รายการ</span>
-              · ยังอยู่ในแท็บรอตรวจ รายการยอดไม่ตรงหรือไม่พบในไฟล์ต้องเปิดตรวจทีละรายการ เพื่อดูยอดและแก้ยอดที่ใช้คิดแต้ม
+              · ยังอยู่ในแท็บรอตรวจ รายการยอดไม่ตรงหรือไม่พบใน Seller Center ต้องเปิดตรวจทีละรายการ เพื่อดูยอดและแก้ยอดที่ใช้คิดแต้ม
             </p>
             <OrderDecisionList
               :lines="skippedLines"

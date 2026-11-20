@@ -93,7 +93,7 @@ export interface OrderReviewItem {
   matchResult: OrderMatchResult
   // Member code of whoever submitted the same order number first; set only for 'duplicate'
   duplicateOfMemberCode: string | null
-  // From the Seller Center file once matched; before that the design shows the member's own figure (e.g. "ยังไม่พบในไฟล์" 890).
+  // From the Seller Center file once matched; before that the design shows the member's own figure (e.g. "ยังไม่พบใน Seller Center" 890).
   // null when neither is known
   amountBaht: number | null
   // null when the order cannot earn points (duplicate, cancelled, returned)
@@ -104,6 +104,10 @@ export interface OrderReviewItem {
   reviewerName: string | null
   // When approved points become usable; null while an approved order waits for the file's delivery date
   pointsAvailableAt: string | null
+  // Approved or rejected automatically from the Seller Center file, not by an admin
+  decidedBySystem: boolean
+  // Not in any file yet and submitted within 7 days: the next import will most likely settle it
+  isWaitingForFile: boolean
 }
 
 export type PlatformOrderStatus = 'pending' | 'completed' | 'closed' | 'cancelled' | 'returned'
@@ -189,7 +193,8 @@ export interface OrderReviewFilters {
   tierNames: string[]
   proof: OrderProofFilter
   reviewerIds: string[]
-  dateRange: OrderDateRange
+  // null = the tab's default for that column, so it follows the tab until the admin picks a range
+  dateRanges: Record<OrderDateColumn, OrderDateRange | null>
   sort: OrderReviewSort
 }
 

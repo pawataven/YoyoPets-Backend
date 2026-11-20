@@ -89,6 +89,8 @@ export interface ImportSummary {
   importId: string
   ordersTotal: number
   memberOrdersPendingMatched: number
+  ordersAutoApproved: number
+  ordersAutoRejected: number
   pointsScheduled: number
   pointsReleased: number
   pointsReduced: number

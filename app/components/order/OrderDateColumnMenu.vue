@@ -17,8 +17,8 @@ const sort = computed({
 })
 
 const dateRange = computed({
-  get: () => filters.value.dateRange,
-  set: dateRange => (filters.value = { ...filters.value, dateRange })
+  get: () => effectiveOrderDateRange(filters.value, props.column),
+  set: range => (filters.value = withOrderDateRange(filters.value, props.column, range))
 })
 
 const reviewerIds = computed({
@@ -26,11 +26,7 @@ const reviewerIds = computed({
   set: reviewerIds => (filters.value = { ...filters.value, reviewerIds })
 })
 
-// Only one date column carries the range at a time: the one the rows are sorted by (or the tab's own date)
-const rangeColumn = computed(() => orderReviewDateColumn(filters.value))
-const isRangeColumn = computed(() => rangeColumn.value === props.column)
-
-const isFiltered = computed(() => (isRangeColumn.value && !isDefaultOrderDateRange(filters.value.dateRange))
+const isFiltered = computed(() => isOrderDateRangeFiltered(filters.value, props.column)
   || (props.column === 'reviewed_at' && filters.value.reviewerIds.length > 0))
 </script>
 
@@ -43,7 +39,7 @@ const isFiltered = computed(() => (isRangeColumn.value && !isDefaultOrderDateRan
     :align="align"
   >
     <template #default="{ close }">
-      <div v-if="isRangeColumn">
+      <div>
         <p class="mb-2 text-[13px] font-bold text-muted">
           ช่วงวันที่
         </p>
@@ -52,13 +48,6 @@ const isFiltered = computed(() => (isRangeColumn.value && !isDefaultOrderDateRan
           @preset-chosen="close"
         />
       </div>
-      <p
-        v-else
-        class="text-sm text-muted"
-      >
-        ตอนนี้ช่วงวันที่กรองด้วย "{{ ORDER_DATE_COLUMN_LABELS[rangeColumn] }}"
-        เลือกเรียงตามคอลัมน์นี้ถ้าต้องการกรองด้วย "{{ ORDER_DATE_COLUMN_LABELS[column] }}"
-      </p>
 
       <OrderCheckList
         v-if="column === 'reviewed_at'"

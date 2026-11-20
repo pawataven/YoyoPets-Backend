@@ -32,7 +32,17 @@ const selectedTab = computed({
   set: tab => (filters.value = withOrderReviewTab(filters.value, tab))
 })
 
-const { orderPage, overview, filterOptions, isLoadingOrders, hasOrdersError, approveOrders, rejectOrders, countOrdersBefore } = useOrderReview(filters, page)
+const {
+  orderPage,
+  overview,
+  filterOptions,
+  isLoadingOrders,
+  hasOrdersError,
+  approveOrders,
+  rejectOrders,
+  revokeApproval,
+  countOrdersBefore
+} = useOrderReview(filters, page)
 
 const isSelectable = computed(() => filters.value.tab === 'pending_review')
 const selectedIds = ref<string[]>([])
@@ -112,6 +122,14 @@ const isRejectOpen = computed({
   get: () => rejectLines.value.length > 0,
   set: (open) => {
     if (!open) rejectLines.value = []
+  }
+})
+
+const revokeLines = ref<OrderDecisionLine[]>([])
+const isRevokeOpen = computed({
+  get: () => revokeLines.value.length > 0,
+  set: (open) => {
+    if (!open) revokeLines.value = []
   }
 })
 
@@ -231,6 +249,28 @@ async function reject(reason: string) {
   }
 }
 
+const REVOKE_ERROR_MESSAGES: Record<string, string> = {
+  points_already_usable: 'แต้มของรายการนี้พร้อมใช้แล้ว ยกเลิกการยืนยันไม่ได้',
+  not_approved: 'รายการนี้ไม่ได้อยู่ในสถานะยืนยันแล้ว'
+}
+
+async function revoke(reason: string) {
+  const line = revokeLines.value[0]
+  if (isBusy.value || !line) return
+  isBusy.value = true
+  try {
+    const outcomes = await revokeApproval(line.id, reason)
+    revokeLines.value = []
+    decisionToast('ยกเลิกการยืนยัน 1 รายการ', outcomes, undefined)
+    closeDrawerAfterDecision([line.id])
+  } catch (error) {
+    const code = (error as { message?: string })?.message ?? ''
+    toast.add({ title: REVOKE_ERROR_MESSAGES[code] ?? 'บันทึกไม่สำเร็จ กรุณาลองใหม่', color: 'error', icon: 'i-lucide-circle-alert' })
+  } finally {
+    isBusy.value = false
+  }
+}
+
 const isExportOpen = ref(false)
 const exportUntil = new Date()
 const exportFrom = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exportUntil.getDate() - (EXPORT_DEFAULT_DAYS - 1))
@@ -242,7 +282,7 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
     <AdminPageHeader
       :breadcrumbs="[{ label: 'หน้าแรก', to: '/' }, { label: 'ตรวจเลขออเดอร์' }]"
       title="ตรวจเลขออเดอร์"
-      description="ตรวจเลขคำสั่งซื้อที่สมาชิกส่งมา เทียบกับไฟล์จาก Seller Center แล้วอนุมัติแต้ม"
+      description="ตรวจเลขคำสั่งซื้อที่สมาชิกส่งมา เทียบกับข้อมูลจาก Seller Center แล้วอนุมัติแต้ม"
     >
       <template #actions>
         <UButton
@@ -330,6 +370,7 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       @next="goToAdjacentOrder(1)"
       @approve="(options, recap) => (pendingApproval = { lines: [recap], options })"
       @reject="recap => (rejectLines = [recap])"
+      @revoke="recap => (revokeLines = [recap])"
     />
 
     <!-- Must come after the drawer: overlays have no z-index and stack in teleport order, so dialogs opened from the drawer would sit behind it -->
@@ -346,6 +387,14 @@ const exportTo = new Date(exportUntil.getFullYear(), exportUntil.getMonth(), exp
       :lines="rejectLines"
       :is-busy="isBusy"
       @confirm="reject"
+    />
+
+    <OrderRejectDialog
+      v-model:open="isRevokeOpen"
+      :lines="revokeLines"
+      :is-busy="isBusy"
+      mode="revoke"
+      @confirm="revoke"
     />
   </div>
 </template>

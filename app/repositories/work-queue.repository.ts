@@ -5,12 +5,12 @@ export interface WorkQueueRepository {
   getCounts(): Promise<WorkQueueCounts>
 }
 
-// Orders to review are real; the redemption count is still the Figma 20:155 sample until redemptions exist
+// Orders to review are real; the redemption count is still the Figma 20:155 sample until redemptions exist.
+// Orders still expected in a file are left out: the next import settles them without anyone (auto review, 2026-11-18).
 export function createWorkQueueRepository(order: OrderRepository): WorkQueueRepository {
   return {
     async getCounts() {
-      const orderCounts = await order.countByStatus()
-      return { ordersToReview: orderCounts.pending_review, redemptionsToShip: 6 }
+      return { ordersToReview: await order.countOrdersNeedingReview(), redemptionsToShip: 6 }
     }
   }
 }

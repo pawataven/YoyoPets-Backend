@@ -37,6 +37,8 @@ function toSummary(raw: Json): ImportSummary {
     importId: String(summary.import_id),
     ordersTotal: Number(summary.orders_total ?? 0),
     memberOrdersPendingMatched: Number(summary.member_orders_pending_matched ?? 0),
+    ordersAutoApproved: Number(summary.orders_auto_approved ?? 0),
+    ordersAutoRejected: Number(summary.orders_auto_rejected ?? 0),
     pointsScheduled: Number(summary.points_scheduled ?? 0),
     pointsReleased: Number(summary.points_released ?? 0),
     pointsReduced: Number(summary.points_reduced ?? 0),

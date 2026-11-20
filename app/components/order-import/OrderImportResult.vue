@@ -10,6 +10,8 @@ const emit = defineEmits<{
 }>()
 
 const pointChanges = computed(() => [
+  { label: 'ยืนยันคำสั่งซื้ออัตโนมัติ', count: props.summary.ordersAutoApproved, tone: 'text-success' },
+  { label: 'ไม่อนุมัติอัตโนมัติ (ยกเลิก/คืน)', count: props.summary.ordersAutoRejected, tone: 'text-primary-dark' },
   { label: 'ตั้งวันแต้มเข้า', count: props.summary.pointsScheduled, tone: 'text-ink' },
   { label: 'แต้มเข้าแล้ว', count: props.summary.pointsReleased, tone: 'text-success' },
   { label: 'ลดแต้ม (คืนบางชิ้น)', count: props.summary.pointsReduced, tone: 'text-pending' },
@@ -29,7 +31,7 @@ const pointChanges = computed(() => [
       </h2>
     </div>
 
-    <dl class="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <dl class="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-3">
       <div
         v-for="change in pointChanges"
         :key="change.label"

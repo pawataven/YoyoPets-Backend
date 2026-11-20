@@ -28,17 +28,17 @@ const summary = computed(() => {
   const imported = order.fileRecord ? ` (นำเข้า ${formatThaiDayMonthTime(order.fileRecord.importedAt)})` : ''
   switch (order.matchResult) {
     case 'matched':
-      return { tone: TONES.success, heading: `พบในไฟล์ ${platformName.value}${imported}` }
+      return { tone: TONES.success, heading: `พบใน ${platformName.value} Seller Center${imported}` }
     case 'amount_mismatch':
-      return { tone: TONES.waiting, heading: `พบในไฟล์ ${platformName.value} แต่ยอดไม่ตรง${imported}` }
+      return { tone: TONES.waiting, heading: `พบใน ${platformName.value} Seller Center แต่ยอดไม่ตรง${imported}` }
     case 'not_in_file':
-      return { tone: TONES.waiting, heading: `ยังไม่พบในไฟล์ ${platformName.value} · นำเข้าไฟล์ล่าสุดก่อนอนุมัติ` }
+      return { tone: TONES.waiting, heading: `ยังไม่พบใน ${platformName.value} Seller Center · นำเข้าไฟล์ล่าสุดก่อนอนุมัติ` }
     case 'duplicate':
       return { tone: TONES.failed, heading: `เลขซ้ำ · สมาชิก ${order.duplicateOfMemberCode ?? ''} ส่งเลขนี้ก่อน` }
     case 'cancelled_in_file':
-      return { tone: TONES.failed, heading: `คำสั่งซื้อถูกยกเลิกในไฟล์ ${platformName.value}${imported}` }
+      return { tone: TONES.failed, heading: `คำสั่งซื้อถูกยกเลิกใน ${platformName.value} Seller Center${imported}` }
     case 'returned_in_file':
-      return { tone: TONES.failed, heading: `สินค้าถูกคืนในไฟล์ ${platformName.value}${imported}` }
+      return { tone: TONES.failed, heading: `สินค้าถูกคืนใน ${platformName.value} Seller Center${imported}` }
   }
   return { tone: TONES.waiting, heading: '' }
 })
@@ -74,7 +74,7 @@ function formatBaht(amount: number | null) {
     <dl class="mt-4 flex flex-col gap-3 ps-7.5 text-[15px]">
       <div class="flex justify-between gap-4">
         <dt class="text-muted">
-          สถานะในไฟล์
+          สถานะใน Seller Center
         </dt>
         <dd class="text-right font-bold text-ink">
           {{ fileStatusText }}
@@ -82,7 +82,7 @@ function formatBaht(amount: number | null) {
       </div>
       <div class="flex justify-between gap-4">
         <dt class="text-muted">
-          ยอดในไฟล์ (ไม่รวมค่าส่ง)
+          ยอดใน Seller Center (ไม่รวมค่าส่ง)
         </dt>
         <dd class="text-right font-bold text-ink">
           {{ formatBaht(order.fileRecord?.amountBaht ?? null) }}
@@ -115,7 +115,7 @@ function formatBaht(amount: number | null) {
           พ้นระยะคืนสินค้า<template v-if="returnWindowDays"> ({{ returnWindowDays[order.platform] }} วันหลังส่งถึง)</template>
         </dt>
         <dd class="text-right font-bold text-ink">
-          {{ order.fileRecord?.returnWindowEndsAt ? formatThaiShortDate(order.fileRecord.returnWindowEndsAt) : 'รอวันส่งถึงจากไฟล์' }}
+          {{ order.fileRecord?.returnWindowEndsAt ? formatThaiShortDate(order.fileRecord.returnWindowEndsAt) : 'รอวันส่งถึงจาก Seller Center' }}
         </dd>
       </div>
     </dl>

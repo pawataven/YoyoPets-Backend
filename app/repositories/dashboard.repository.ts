@@ -96,7 +96,7 @@ export function createMockDashboardRepository(): DashboardRepository {
 
     async getRecentTeamActivity(limit) {
       const activity: TeamActivity[] = [
-        { id: 'activity-1', adminName: 'คุณบีม', occurredAt: daysAgo(0, 9, 12), description: 'อนุมัติ 15 ออเดอร์จากไฟล์ Lazada' },
+        { id: 'activity-1', adminName: 'คุณบีม', occurredAt: daysAgo(0, 9, 12), description: 'อนุมัติ 15 ออเดอร์จาก Lazada Seller Center' },
         { id: 'activity-2', adminName: 'คุณต้น', occurredAt: daysAgo(1, 16, 40), description: 'ใส่เลขพัสดุ RW-2611-0042' },
         { id: 'activity-3', adminName: 'คุณฝน', occurredAt: daysAgo(2, 11, 5), description: 'ตั้งของรางวัล Top Spender พ.ย.' },
         { id: 'activity-4', adminName: 'คุณบีม', occurredAt: daysAgo(3, 14, 30), description: 'ปรับแต้ม +100 ให้ YY-100871' },

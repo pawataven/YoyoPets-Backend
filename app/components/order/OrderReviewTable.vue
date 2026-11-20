@@ -26,6 +26,13 @@ function filterModel<K extends keyof OrderReviewFilters>(key: K) {
   })
 }
 
+// "cancelled" can be opened from a link but has no tab of its own
+const tabLabel = computed(() => {
+  const { tab } = filters.value
+  return ORDER_REVIEW_TABS.find(option => option.value === tab)?.label ?? (tab === 'all' ? '' : ORDER_STATUS_BADGES[tab].label)
+})
+const filterSummary = computed(() => orderFilterSummary(filters.value, props.filterOptions?.reviewers ?? null))
+
 const sort = filterModel('sort')
 const platforms = filterModel('platforms')
 const tierNames = filterModel('tierNames')
@@ -202,12 +209,12 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
             <th scope="col">
               <OrderColumnMenu
                 v-model:sort="sort"
-                label="ผลตรวจกับไฟล์ร้าน"
+                label="ผลเทียบ Seller Center"
                 :is-filtered="matchResults.length > 0"
               >
                 <OrderCheckList
                   v-model="matchResults"
-                  legend="ผลตรวจกับไฟล์ร้าน"
+                  legend="ผลเทียบ Seller Center"
                   :options="ORDER_MATCH_OPTIONS"
                 />
               </OrderColumnMenu>
@@ -282,9 +289,44 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
           <tr class="border-t border-default">
             <td
               :colspan="10"
-              class="px-6 py-16 text-center text-muted"
+              class="px-6 py-14 text-center text-muted"
             >
-              ไม่พบคำสั่งซื้อตามเงื่อนไขที่เลือก
+              <div class="mx-auto flex max-w-xl flex-col items-center gap-3">
+                <UIcon
+                  name="i-lucide-search-x"
+                  class="size-8 text-dimmed"
+                />
+                <p class="text-[15px] font-bold text-ink">
+                  {{ filterSummary.length ? `ไม่มีคำสั่งซื้อในแท็บ "${tabLabel}" ที่ตรงกับตัวกรองที่เลือก` : `ยังไม่มีคำสั่งซื้อในแท็บ "${tabLabel}"` }}
+                </p>
+                <template v-if="filterSummary.length">
+                  <ul
+                    class="flex flex-wrap justify-center gap-2"
+                    aria-label="ตัวกรองที่ใช้อยู่"
+                  >
+                    <li
+                      v-for="line in filterSummary"
+                      :key="line"
+                      class="rounded-full bg-neutral-soft px-3 py-1 text-[13px] text-ink"
+                    >
+                      {{ line }}
+                    </li>
+                  </ul>
+                  <p class="text-sm">
+                    ลองขยายช่วงวันที่ เอาตัวกรองบางอันออก หรือแก้คำค้นหา
+                  </p>
+                  <UButton
+                    v-if="hasActiveOrderFilters(filters)"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-x"
+                    class="rounded-xl"
+                    @click="filters = clearOrderFilters(filters)"
+                  >
+                    ล้างตัวกรอง
+                  </UButton>
+                </template>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -377,7 +419,7 @@ const PAGINATION_BUTTON = 'size-9 justify-center rounded-lg ring-[1.5px] font-nu
             <td>
               <span
                 class="inline-flex h-8 items-center rounded-full px-5 text-sm font-bold whitespace-nowrap"
-                :class="ORDER_MATCH_BADGES[order.matchResult].class"
+                :class="orderMatchBadgeClass(order)"
               >
                 {{ orderMatchLabel(order) }}
               </span>

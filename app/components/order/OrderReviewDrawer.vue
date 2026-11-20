@@ -19,6 +19,7 @@ const emit = defineEmits<{
   next: []
   approve: [options: OrderApproveOptions, recap: OrderDecisionLine]
   reject: [recap: OrderDecisionLine]
+  revoke: [recap: OrderDecisionLine]
 }>()
 
 const POINTS_PREVIEW_DEBOUNCE_MS = 250
@@ -82,7 +83,7 @@ const formulaText = computed(() => {
 // Without a delivery date in the file the points wait for a later import (spec 2026-11-18), not a fixed day count
 const returnWindowLabel = computed(() => {
   const endsAt = detail.value?.fileRecord?.returnWindowEndsAt
-  return endsAt ? `(${formatThaiDayMonth(endsAt)})` : '(รอวันส่งถึงจากไฟล์)'
+  return endsAt ? `(${formatThaiDayMonth(endsAt)})` : '(รอวันส่งถึงจาก Seller Center)'
 })
 
 const memberVisibleChange = computed(() => {
@@ -126,7 +127,7 @@ const reviewedSummary = computed(() => {
   const points = order.points === null ? '' : ` · +${order.points.toLocaleString('th-TH')} แต้ม`
   const availability = order.pointsAvailableAt
     ? ` · แต้มใช้ได้ตั้งแต่ ${formatThaiShortDate(order.pointsAvailableAt)}`
-    : ' · แต้มรอวันส่งถึงจากไฟล์'
+    : ' · แต้มรอวันส่งถึงจาก Seller Center'
   return { tone: 'bg-success/10 text-success', text: `อนุมัติแล้ว${points}${availability}`, byline }
 })
 
@@ -253,7 +254,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
               v-else
               class="mt-2 text-sm text-muted"
             >
-              ยังไม่มีรายการสินค้า จะแสดงเมื่อพบคำสั่งซื้อในไฟล์ร้าน
+              ยังไม่มีรายการสินค้า จะแสดงเมื่อพบคำสั่งซื้อนี้ในข้อมูลจาก Seller Center
             </p>
 
             <div class="mt-6 flex flex-col gap-5 sm:flex-row sm:gap-6">
@@ -378,8 +379,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
             </template>
             <span class="max-sm:hidden"> · กด J/K เพื่อเลื่อน</span>
           </p>
+          <!-- Approved but points not usable yet: an admin can still undo a suspicious approval (auto review, 2026-11-18) -->
+          <UButton
+            v-if="detail && detail.status === 'waiting_return_period'"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-undo-2"
+            :disabled="isBusy"
+            class="h-12 justify-center rounded-xl px-5 font-heading text-base font-normal text-primary-dark ring-[1.5px] ring-primary/60 hover:bg-primary-soft"
+            @click="emit('revoke', { ...toOrderDecisionLine(detail), points: detail.points })"
+          >
+            ยกเลิกการยืนยัน
+          </UButton>
           <div
-            v-if="detail && isPending"
+            v-else-if="detail && isPending"
             class="flex gap-3"
           >
             <UButton

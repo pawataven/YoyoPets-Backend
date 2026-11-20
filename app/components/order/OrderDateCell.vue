@@ -27,7 +27,7 @@ defineProps<{
       {{ formatThaiDayMonthTime(order.reviewedAt) }}
     </span>
     <span class="block max-w-40 truncate text-[13px] text-muted">
-      โดย {{ order.reviewerName ?? REMOVED_ADMIN_NAME }}
+      โดย {{ orderReviewerName(order) }}
     </span>
   </span>
   <span

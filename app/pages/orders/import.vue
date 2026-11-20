@@ -84,7 +84,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeLeavi
       icon="i-lucide-clock-alert"
       :title="`แต้ม ${longWaitingCount.toLocaleString('th-TH')} รายการรอข้อมูลส่งถึงนานกว่า ${longWaitDays} วัน`"
       description="ออเดอร์เหล่านี้อนุมัติแล้วแต่ยังไม่เจอวันส่งถึงในไฟล์ใดเลย ลองนำเข้าไฟล์ที่ครอบคลุมช่วงวันที่สั่งซื้อของออเดอร์เหล่านั้น"
-      :actions="[{ label: 'ดูรายการ', to: { path: '/orders', query: { tab: 'waiting_return_period', within: 'all' } }, color: 'neutral', variant: 'outline' }]"
+      :actions="[{ label: 'ดูรายการ', to: { path: '/orders', query: { tab: 'waiting_return_period', reviewed_within: 'all' } }, color: 'neutral', variant: 'outline' }]"
       class="mt-6"
     />
 

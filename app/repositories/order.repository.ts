@@ -28,6 +28,8 @@ export interface OrderRepository {
   getReviewOrder(orderId: string): Promise<OrderReviewDetail | null>
   getReviewStatuses(orderIds: string[]): Promise<OrderReviewOutcome[]>
   countByStatus(): Promise<OrderStatusCounts>
+  // Waiting orders a person has to look at: everything except recent ones still expected in a file
+  countOrdersNeedingReview(): Promise<number>
   getLatestFileImports(): Promise<OrderFileImport[]>
   // Days after delivery before points become usable, per platform (platform_settings)
   getReturnWindowDays(): Promise<Record<MarketplacePlatform, number>>
@@ -35,6 +37,8 @@ export interface OrderRepository {
   calculatePoints(amountBaht: number, pointsMultiplier: number): Promise<number>
   approveOrders(orderIds: string[], options: OrderApproveOptions): Promise<OrderBulkResult>
   rejectOrders(orderIds: string[], reason: string): Promise<OrderBulkResult>
+  // Only while the approved points are not usable yet
+  revokeApproval(orderId: string, reason: string): Promise<void>
 }
 
 type ReviewRow = Omit<
@@ -42,7 +46,7 @@ type ReviewRow = Omit<
   'approved_amount_baht' | 'points_awarded' | 'reviewed_by' | 'stored_status'
 >
 
-const REVIEW_COLUMNS = 'id, member_id, member_code, member_name, member_phone, tier_name, tier_points_multiplier, platform, order_no, submitted_at, claimed_amount_baht, proof_image_path, review_status, rejection_reason, points_available_at, amount_baht, platform_order_id, file_status, file_amount_baht, file_delivered_at, return_window_ends_at, file_imported_at, duplicate_of_member_code, match_result, points, reviewed_at, reviewer_name'
+const REVIEW_COLUMNS = 'id, member_id, member_code, member_name, member_phone, tier_name, tier_points_multiplier, platform, order_no, submitted_at, claimed_amount_baht, proof_image_path, review_status, rejection_reason, points_available_at, amount_baht, platform_order_id, file_status, file_amount_baht, file_delivered_at, return_window_ends_at, file_imported_at, duplicate_of_member_code, match_result, points, reviewed_at, reviewer_name, decided_by_system, is_waiting_for_file'
 
 const REVIEW_STATUSES: OrderReviewStatus[] = ['pending_review', 'waiting_return_period', 'approved', 'rejected', 'cancelled']
 const PROOF_BUCKET = 'order-proofs'
@@ -92,7 +96,9 @@ function toReviewItem(row: ReviewRow): OrderReviewItem {
     status: row.review_status as OrderReviewStatus,
     reviewedAt: row.reviewed_at,
     reviewerName: row.reviewer_name,
-    pointsAvailableAt: row.points_available_at
+    pointsAvailableAt: row.points_available_at,
+    decidedBySystem: row.decided_by_system ?? false,
+    isWaitingForFile: row.is_waiting_for_file ?? false
   }
 }
 
@@ -111,10 +117,11 @@ export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>
     if (filters.reviewerIds.length) query = query.in('reviewed_by', filters.reviewerIds)
     if (filters.proof === 'with') query = query.not('proof_image_path', 'is', null)
     if (filters.proof === 'without') query = query.is('proof_image_path', null)
-    const dateColumn = orderReviewDateColumn(filters)
-    const { since, until } = orderDateBounds(filters.dateRange)
-    if (since) query = query.gte(dateColumn, since.toISOString())
-    if (until) query = query.lt(dateColumn, until.toISOString())
+    for (const dateColumn of ['submitted_at', 'reviewed_at'] as const) {
+      const { since, until } = orderDateBounds(effectiveOrderDateRange(filters, dateColumn))
+      if (since) query = query.gte(dateColumn, since.toISOString())
+      if (until) query = query.lt(dateColumn, until.toISOString())
+    }
     const conditions = searchConditions(filters.searchTerm)
     if (conditions) query = query.or(conditions)
     return query
@@ -311,6 +318,21 @@ export function createSupabaseOrderRepository(supabase: SupabaseClient<Database>
       const { data, error } = await supabase.rpc('reject_member_orders', { order_ids: orderIds, reason })
       if (error) throw error
       return toBulkResult(data)
+    },
+
+    async revokeApproval(orderId, reason) {
+      const { error } = await supabase.rpc('revoke_member_order_approval', { revoke_order_id: orderId, reason })
+      if (error) throw error
+    },
+
+    async countOrdersNeedingReview() {
+      const { count, error } = await supabase
+        .from('member_order_reviews')
+        .select('id', { count: 'exact', head: true })
+        .eq('review_status', 'pending_review')
+        .eq('is_waiting_for_file', false)
+      if (error) throw error
+      return count ?? 0
     }
   }
 }

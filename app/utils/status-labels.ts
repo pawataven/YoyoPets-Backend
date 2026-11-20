@@ -22,18 +22,29 @@ export const ORDER_STATUS_BADGES: Record<OrderReviewStatus, StatusBadge> = {
 // Wording from the order review design (Figma 20:1293)
 export const ORDER_MATCH_BADGES: Record<OrderMatchResult, StatusBadge> = {
   matched: { label: 'พบ · ยอดตรง', class: TONE_SUCCESS },
-  not_in_file: { label: 'ยังไม่พบในไฟล์', class: TONE_WAITING },
+  not_in_file: { label: 'ยังไม่พบใน Seller Center', class: TONE_WAITING },
   amount_mismatch: { label: 'ยอดไม่ตรง', class: TONE_WAITING },
   duplicate: { label: 'เลขซ้ำ', class: TONE_FAILED },
   cancelled_in_file: { label: 'คำสั่งซื้อถูกยกเลิก', class: TONE_FAILED },
   returned_in_file: { label: 'สินค้าถูกคืน', class: TONE_FAILED }
 }
 
-export function orderMatchLabel(order: Pick<OrderReviewItem, 'matchResult' | 'duplicateOfMemberCode'>) {
+const DAY_MS = 86_400_000
+
+export function orderMatchLabel(order: Pick<OrderReviewItem, 'matchResult' | 'duplicateOfMemberCode' | 'isWaitingForFile' | 'submittedAt'>) {
+  if (order.isWaitingForFile) {
+    const waitedDays = Math.max(0, Math.floor((Date.now() - Date.parse(order.submittedAt)) / DAY_MS))
+    return waitedDays ? `รอ Seller Center · ${waitedDays} วัน` : 'รอ Seller Center · วันนี้'
+  }
   const label = ORDER_MATCH_BADGES[order.matchResult].label
   return order.matchResult === 'duplicate' && order.duplicateOfMemberCode
     ? `${label} · ${order.duplicateOfMemberCode}`
     : label
+}
+
+// Recent orders not in a file yet are expected to settle on the next import, so they look calm rather than alarming
+export function orderMatchBadgeClass(order: Pick<OrderReviewItem, 'matchResult' | 'isWaitingForFile'>) {
+  return order.isWaitingForFile ? 'bg-neutral-soft text-muted' : ORDER_MATCH_BADGES[order.matchResult].class
 }
 
 const REVIEW_DECISION_VERBS: Record<OrderReviewStatus, string | null> = {
@@ -47,11 +58,18 @@ const REVIEW_DECISION_VERBS: Record<OrderReviewStatus, string | null> = {
 // The name is gone when the reviewing admin account was deleted; the decision itself still stands
 export const REMOVED_ADMIN_NAME = 'แอดมินที่ถูกลบ'
 
-// "อนุมัติโดย ทีมพัฒนา"; null while the order is still waiting for review
-export function orderReviewerLabel(order: Pick<OrderReviewItem, 'status' | 'reviewedAt' | 'reviewerName'>) {
+export const SYSTEM_REVIEWER_NAME = 'ระบบ (ตาม Seller Center)'
+
+export function orderReviewerName(order: Pick<OrderReviewItem, 'reviewerName' | 'decidedBySystem'>) {
+  if (order.decidedBySystem) return SYSTEM_REVIEWER_NAME
+  return order.reviewerName ?? REMOVED_ADMIN_NAME
+}
+
+// "อนุมัติโดย ทีมพัฒนา" / "อนุมัติโดย ระบบ (ตาม Seller Center)"; null while the order is still waiting for review
+export function orderReviewerLabel(order: Pick<OrderReviewItem, 'status' | 'reviewedAt' | 'reviewerName' | 'decidedBySystem'>) {
   const verb = REVIEW_DECISION_VERBS[order.status]
   if (!verb || !order.reviewedAt) return null
-  return `${verb} ${order.reviewerName ?? REMOVED_ADMIN_NAME}`
+  return `${verb} ${orderReviewerName(order)}`
 }
 
 export const REDEMPTION_STATUS_BADGES: Record<RedemptionStatus, StatusBadge> = {

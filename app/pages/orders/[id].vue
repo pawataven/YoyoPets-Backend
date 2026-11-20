@@ -4,7 +4,7 @@ const route = useRoute()
 
 await navigateTo({
   path: '/orders',
-  query: { tab: 'all', within: 'all', review: String(route.params.id) }
+  query: { tab: 'all', submitted_within: 'all', review: String(route.params.id) }
 }, { replace: true })
 </script>
 

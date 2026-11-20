@@ -43,6 +43,12 @@ export function useOrderReview(filters: Ref<OrderReviewFilters>, page: Ref<numbe
     return { ...result, outcomes }
   }
 
+  async function revokeApproval(orderId: string, reason: string) {
+    await order.revokeApproval(orderId, reason)
+    const [outcomes] = await Promise.all([decidedOutcomes([orderId]), refreshAfterChange()])
+    return outcomes
+  }
+
   function countOrdersBefore(targetFilters: OrderReviewFilters, orderId: string) {
     return order.countReviewOrdersBefore(targetFilters, orderId)
   }
@@ -55,6 +61,7 @@ export function useOrderReview(filters: Ref<OrderReviewFilters>, page: Ref<numbe
     isLoadingOrders: computed(() => orderPageStatus.value === 'pending'),
     hasOrdersError: computed(() => orderPageStatus.value === 'error'),
     approveOrders,
-    rejectOrders
+    rejectOrders,
+    revokeApproval
   }
 }

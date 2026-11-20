@@ -29,19 +29,12 @@ watch(() => filters.value.searchTerm, (term) => {
 
 onBeforeUnmount(() => clearTimeout(searchTimer))
 
-function updateFilter<K extends keyof OrderReviewFilters>(key: K, value: OrderReviewFilters[K]) {
-  filters.value = { ...filters.value, [key]: value }
-}
-
-const isDateMenuOpen = ref(false)
-
-const dateRange = computed({
-  get: () => filters.value.dateRange,
-  set: dateRange => updateFilter('dateRange', dateRange)
+// The tab's own date always has a button; the other one only while it is filtered, so no filter is ever out of sight
+const leadDateColumn = computed(() => tabDateColumn(filters.value.tab))
+const filteredOtherDateColumn = computed(() => {
+  const column = otherOrderDateColumn(leadDateColumn.value)
+  return isOrderDateRangeFiltered(filters.value, column) ? column : null
 })
-
-const dateButtonLabel = computed(() =>
-  `${ORDER_DATE_COLUMN_LABELS[orderReviewDateColumn(filters.value)]}: ${orderDateRangeLabel(filters.value.dateRange)}`)
 
 const IMPORT_PLATFORM_NAMES: Record<MarketplacePlatform, string> = { shopee: 'Shopee', lazada: 'Lazada', tiktok: 'TikTok' }
 
@@ -77,31 +70,16 @@ function importSummary(fileImport: OrderFileImport) {
         </template>
       </UInput>
 
-      <UPopover
-        v-model:open="isDateMenuOpen"
-        :content="{ align: 'start', sideOffset: 8, collisionPadding: 16 }"
-        :ui="{ content: 'rounded-2xl shadow-xl ring-default' }"
-      >
-        <UButton
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-calendar"
-          trailing-icon="i-lucide-chevron-down"
-          class="h-11 justify-between rounded-xl bg-white px-3.5 text-[15px] font-normal text-ink ring-[1.5px] xl:min-w-55"
-          :ui="{ leadingIcon: 'size-5 text-ink', trailingIcon: 'size-5 text-ink' }"
-        >
-          <span class="flex-1 truncate text-left">{{ dateButtonLabel }}</span>
-        </UButton>
+      <OrderDateRangeButton
+        v-model="filters"
+        :column="leadDateColumn"
+      />
 
-        <template #content>
-          <div class="w-[min(300px,calc(100vw-2rem))] p-3">
-            <OrderDateRangeOptions
-              v-model="dateRange"
-              @preset-chosen="isDateMenuOpen = false"
-            />
-          </div>
-        </template>
-      </UPopover>
+      <OrderDateRangeButton
+        v-if="filteredOtherDateColumn"
+        v-model="filters"
+        :column="filteredOtherDateColumn"
+      />
 
       <UButton
         v-if="hasActiveOrderFilters(filters)"
@@ -117,13 +95,13 @@ function importSummary(fileImport: OrderFileImport) {
 
     <div class="text-[13px] text-muted xl:ml-auto xl:text-right">
       <p class="font-bold">
-        ไฟล์ล่าสุด
+        ข้อมูล Seller Center ล่าสุด
       </p>
       <p v-if="!latestImports">
         &nbsp;
       </p>
       <p v-else-if="!latestImports.length">
-        ยังไม่เคยนำเข้าไฟล์
+        ยังไม่เคยนำเข้า
       </p>
       <p v-else>
         {{ latestImports.map(importSummary).join(' · ') }}
